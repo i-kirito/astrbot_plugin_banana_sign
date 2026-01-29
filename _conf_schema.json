@@ -1,0 +1,454 @@
+{
+    "sign_config": {
+        "description": "签到积分配置",
+        "type": "object",
+        "hint": "配置签到奖励和画图消耗积分",
+        "items": {
+            "daily_reward": {
+                "description": "每日签到奖励",
+                "type": "int",
+                "default": 1,
+                "hint": "每次签到获得的香蕉数量"
+            },
+            "streak_bonus": {
+                "description": "连续签到奖励",
+                "type": "int",
+                "default": 1,
+                "hint": "连续签到7天额外获得的香蕉数量"
+            },
+            "cost_per_draw": {
+                "description": "每次画图消耗",
+                "type": "int",
+                "default": 1,
+                "hint": "每次画图消耗的香蕉数量"
+            },
+            "consume_enabled": {
+                "description": "启用积分消耗",
+                "type": "bool",
+                "default": true,
+                "hint": "关闭后画图不消耗积分"
+            }
+        }
+    },
+    "prompt": {
+        "description": "预设提示词",
+        "type": "list",
+        "default": [
+            "bnn {{user_text}} --min_images 1",
+            "bnt {{user_text}} --min_images 0",
+            "bna {{user_text}} --min_images 0 --gather_mode",
+            "手办化 Create a premium, collectible 1/7 scale standalone figurine based on the image, meticulously replicating the character, made from smooth PVC and ABS plastic with a professional matte finish. It stands on a minimalist transparent acrylic base. Next to it is its retail packaging box displaying the price and brand information, with the figure wrapped in plastic inside the slightly larger box. They are naturally arranged on a clean wooden table surrounded by reference books, with a bookshelf in the background and soft afternoon sunlight streaming through the window. Photo-realistic, DSLR effect, depth of field, bokeh background."
+        ],
+        "hint": "格式1: 触发词 提示词 --参数1 参数值1 --参数2 参数值2。格式2: [触发词1,触发词2] 提示词 --参数1 参数值1 --参数2 参数值2。触发词和触发词列表不能有空格。若省略参数值，则视为布尔值true。占位提示词：{{user_text}}，占位提示词会被消息内容覆盖，用于自定义提示词，可以在占位提示词前后添加固定的预设提示词。可选的参数请参考 README.md。触发词冲突可能会相互覆盖。"
+    },
+    "main_provider": {
+        "description": "主提供商",
+        "type": "object",
+        "hint": "优先使用主提供商，主提供商重试机会耗尽后，依次降级回退到备用提供商重试。",
+        "items": {
+            "enabled": {
+                "description": "启用接口",
+                "type": "bool",
+                "default": true,
+                "hint": "这个选项本质上是控制--providers默认参数，可以在提示词中指定加以覆盖"
+            },
+            "api_name": {
+                "description": "提供商名称",
+                "type": "string",
+                "default": "主提供商",
+                "hint": "用于信息回显时识别具体的提供商，以及在参数中指定提供商。"
+            },
+            "api_type": {
+                "description": "接口规范类型",
+                "hint": "这个API接口使用的规范类型。Vertex_AI_Anonymous类型接口请下拉到 vertex_ai_anonymous_config 进行具体配置。",
+                "type": "string",
+                "options": [
+                    "Gemini",
+                    "OpenAI_Chat",
+                    "Vertex_AI_Anonymous"
+                ],
+                "default": "Vertex_AI_Anonymous"
+            },
+            "keys": {
+                "description": "API密钥",
+                "type": "list",
+                "default": [],
+                "hint": "API Key列表。对于 OpenAI 规范，不需要填写Bearer 前缀，后端会自动拼接。VertexAI逆向可留空。"
+            },
+            "api_url": {
+                "description": "api_url",
+                "type": "string",
+                "default": "https://generativelanguage.googleapis.com/v1beta/models",
+                "hint": "Gemini示例：https://<base_url>/v1beta/models；OpenAI示例：http://<base_url>/v1/chat/completions；VertexAI逆向可留空。"
+            },
+            "model": {
+                "description": "模型",
+                "type": "string",
+                "default": "gemini-3-pro-image-preview",
+                "hint": "默认值 gemini-3-pro-image-preview"
+            },
+            "stream": {
+                "description": "流式",
+                "type": "bool",
+                "default": false,
+                "hint": "需提供商支持"
+            }
+        }
+    },
+    "back_provider": {
+        "description": "备用提供商1",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "enabled": {
+                "description": "启用接口",
+                "type": "bool",
+                "default": false,
+                "hint": "这个选项本质上是控制--providers默认参数，可以在提示词中指定加以覆盖"
+            },
+            "api_name": {
+                "description": "提供商名称",
+                "type": "string",
+                "default": "备用提供商1",
+                "hint": "用于信息回显时识别具体的提供商，以及在参数中指定提供商。"
+            },
+            "api_type": {
+                "description": "接口规范类型",
+                "hint": "这个API接口使用的规范类型。",
+                "type": "string",
+                "options": [
+                    "Gemini",
+                    "OpenAI_Chat",
+                    "Vertex_AI_Anonymous"
+                ],
+                "default": "Gemini"
+            },
+            "keys": {
+                "description": "API密钥",
+                "hint": "API Key列表。对于 OpenAI 规范，不需要填写Bearer 前缀，后端会自动拼接。VertexAI逆向可留空。",
+                "type": "list",
+                "default": []
+            },
+            "api_url": {
+                "description": "api_url",
+                "type": "string",
+                "default": "https://generativelanguage.googleapis.com/v1beta/models",
+                "hint": "Gemini示例：https://<base_url>/v1beta/models；OpenAI示例：http://<base_url>/v1/chat/completions；VertexAI逆向可留空。"
+            },
+            "model": {
+                "description": "模型",
+                "type": "string",
+                "default": "gemini-3-pro-image-preview",
+                "hint": "默认值 gemini-3-pro-image-preview"
+            },
+            "stream": {
+                "description": "流式",
+                "type": "bool",
+                "default": false,
+                "hint": "需提供商支持"
+            }
+        }
+    },
+    "back_provider2": {
+        "description": "备用提供商2",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "enabled": {
+                "description": "启用接口",
+                "type": "bool",
+                "default": false,
+                "hint": "这个选项本质上是控制--providers默认参数，可以在提示词中指定加以覆盖"
+            },
+            "api_name": {
+                "description": "提供商名称",
+                "type": "string",
+                "default": "备用提供商2",
+                "hint": "用于信息回显时识别具体的提供商，以及在参数中指定提供商。"
+            },
+            "api_type": {
+                "description": "接口规范类型",
+                "type": "string",
+                "options": [
+                    "Gemini",
+                    "OpenAI_Chat",
+                    "Vertex_AI_Anonymous"
+                ],
+                "default": "Gemini",
+                "hint": "这个API接口使用的规范类型。"
+            },
+            "keys": {
+                "description": "API密钥",
+                "hint": "API Key列表。对于 OpenAI 规范，不需要填写Bearer 前缀，后端会自动拼接。VertexAI逆向可留空。",
+                "type": "list",
+                "default": []
+            },
+            "api_url": {
+                "description": "api_url",
+                "type": "string",
+                "default": "https://generativelanguage.googleapis.com/v1beta/models",
+                "hint": "Gemini示例：https://<base_url>/v1beta/models；OpenAI示例：http://<base_url>/v1/chat/completions；VertexAI逆向可留空。"
+            },
+            "model": {
+                "description": "模型",
+                "type": "string",
+                "default": "gemini-3-pro-image-preview",
+                "hint": "默认值 gemini-3-pro-image-preview"
+            },
+            "stream": {
+                "description": "流式",
+                "type": "bool",
+                "default": false,
+                "hint": "需提供商支持"
+            }
+        }
+    },
+    "prompt_config": {
+        "description": "提示词默认参数",
+        "type": "object",
+        "hint": "若提示词中未指定参数，将使用这里的默认参数。自定义提示词也可以直接指定参数，记得带上空格。示例：bnn 提示词 --image_size 4K --google_search",
+        "items": {
+            "min_images": {
+                "description": "最小输入图片数量",
+                "type": "int",
+                "default": 1,
+                "hint": "如果消息携带的图片数量少于这个值，将自动添加At对象头像（At多个用户则可能添加多张，直到达到上限），如果仍然不够，继续添加发送者头像（仅Aiocqhttp），数量仍然不够将返回错误信息。"
+            },
+            "max_images": {
+                "description": "最大输入图片数量",
+                "type": "int",
+                "default": 6,
+                "hint": "消息中携带的图片数量超过这个值n，只取前n张图片。Gemini API文档写了Gemini3最大支持14张图片输入，最佳实践是3张。"
+            },
+            "aspect_ratio": {
+                "description": "宽高比",
+                "type": "string",
+                "options": [
+                    "default",
+                    "1:1",
+                    "2:3",
+                    "3:2",
+                    "3:4",
+                    "4:3",
+                    "4:5",
+                    "5:4",
+                    "9:16",
+                    "16:9",
+                    "21:9"
+                ],
+                "default": "default",
+                "hint": "设置为 default 将不传递这个参数。根据Gemini API文档，默认情况下，模型会使输出图片的大小与输入图片的大小保持一致。仅Gemini规范有效。"
+            },
+            "image_size": {
+                "description": "分辨率",
+                "type": "string",
+                "options": [
+                    "1K",
+                    "2K",
+                    "4K"
+                ],
+                "default": "1K",
+                "hint": "生成图片的分辨率，必须是大写的K。当前仅对Gemini规范的 gemini-3 模型有效"
+            },
+            "google_search": {
+                "description": "是否启用谷歌搜索工具",
+                "type": "bool",
+                "default": true,
+                "hint": "允许模型使用谷歌搜索工具获取实时信息。当前仅对Gemini规范的 gemini-3 模型有效"
+            },
+            "refer_images": {
+                "description": "参考图片",
+                "type": "string",
+                "default": "",
+                "hint": "填写格式是 文件名1,文件名2 把图片文件放在插件数据目录的 refer_images 文件夹下，这个参数指定的图片会优先传递给上下文。"
+            },
+            "gather_mode": {
+                "description": "启用收集模式",
+                "type": "bool",
+                "default": false,
+                "hint": "启用后插件不会立即开始画图，允许用户连续发送多条消息，直到回复「开始」，才会将收集到的文本和图片用于图片生成。"
+            }
+        }
+    },
+    "params_alias_map": {
+        "description": "参数别名映射",
+        "type": "list",
+        "default": ["append_mode:gather_mode"],
+        "hint": "格式是 自定义名称:内置参数名称 设置后使用自定义名称和内置参数名称皆可应用参数。参数名称冲突可能会相互覆盖。"
+    },
+    "common_config": {
+        "description": "常规配置",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "preset_append": {
+                "description": "启用预设提示词补充",
+                "type": "bool",
+                "default": true,
+                "hint": "启用后将在预设提示词后追加用户输入文本。相当于给预设提示词末尾加上 {{user_text}} 占位符。若已有 {{user_text}} 占位符，则忽略。"
+            },
+            "text_response": {
+                "description": "启用文本响应",
+                "type": "bool",
+                "default": false,
+                "hint": "无论是否开启此项，插件都会静默忽略文本响应。仅Gemini规范有效。"
+            },
+            "smart_retry": {
+                "description": "启用智能重试",
+                "type": "bool",
+                "default": true,
+                "hint": "启用后针对部分响应代码跳过重试，直接切换下一个Key。"
+            },
+            "max_retry": {
+                "description": "最大重试次数",
+                "type": "int",
+                "default": 3,
+                "hint": "每个Key的最大重试次数"
+            },
+            "timeout": {
+                "description": "超时",
+                "type": "float",
+                "default": 300,
+                "hint": "单位：秒，仅对模型请求有效。每次重试独立计算超时时间。"
+            },
+            "proxy": {
+                "description": "HTTP代理",
+                "type": "string",
+                "default": "",
+                "hint": "格式示例：http://127.0.0.1:7890，对大部分接口请求启用（包括图片下载）。"
+            }
+        }
+    },
+    "prefix_config": {
+        "description": "绘图命令触发方式",
+        "type": "object",
+        "hint": "默认情况下，@机器人 将无视前缀要求（相当于启用混合模式）",
+        "items": {
+            "coexist_enabled": {
+                "description": "混合模式",
+                "type": "bool",
+                "default": false,
+                "hint": "启用后，无命令前缀与带命令前缀皆可触发生成图片功能。无特殊需求不需要开启。"
+            },
+            "prefix_list": {
+                "description": "命令前缀",
+                "type": "list",
+                "default": [],
+                "hint": "命令前缀列表。触发格式是 命令前缀+触发词。"
+            }
+        }
+    },
+    "vertex_ai_anonymous_config": {
+        "description": "Vertex AI Anonymous配置项",
+        "type": "object",
+        "hint": "提供商配置中，除了接口规范和模型外，其他选项皆对Vertex AI Anonymous规范无效，请在此配置。",
+        "items": {
+            "recaptcha_base_api": {
+                "description": "Recaptcha Base API",
+                "type": "string",
+                "default": "https://www.google.com",
+                "hint": "考虑到网络环境或者IP频繁的情况，可以在这里配置反向代理"
+            },
+            "vertex_ai_anonymous_base_api": {
+                "description": "Vertex AI Anonymous Base API",
+                "type": "string",
+                "default": "https://cloudconsole-pa.clients6.google.com",
+                "hint": "考虑到网络环境或者IP频繁的情况，可以在这里配置反向代理"
+            },
+            "system_prompt": {
+                "description": "系统提示词",
+                "type": "text",
+                "default": "",
+                "hint": "留空将不传递这个参数。"
+            },
+            "max_retry": {
+                "description": "最大重试次数",
+                "type": "int",
+                "default": 10,
+                "hint": "独立于常规接口的重试次数配置。"
+            }
+        }
+    },
+    "preference_config": {
+        "description": "偏好设置",
+        "type": "object",
+        "hint": "以下配置因个人使用需求而异，暂无两全之策。跳过At头像的三个选项共用一个计数。",
+        "items": {
+            "skip_at_first": {
+                "description": "跳过第一次@机器人",
+                "type": "bool",
+                "default": true,
+                "hint": "通过@唤醒机器人时，跳过一次机器人的头像。"
+            },
+            "skip_quote_first": {
+                "description": "跳过第一次@引用",
+                "type": "bool",
+                "default": true,
+                "hint": "如果@对象是被引用消息的发送者，跳过一次@对象的头像。"
+            },
+            "skip_llm_at_first": {
+                "description": "LLM跳过第一次@机器人",
+                "type": "bool",
+                "default": true,
+                "hint": "通过@机器人触发LLM函数调用工具，跳过一次机器人的头像。"
+            }
+        }
+    },
+    "llm_tool_settings": {
+        "description": "LLM函数调用工具配置",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "llm_tool_enabled": {
+                "description": "启用函数调用工具",
+                "type": "bool",
+                "default": true,
+                "hint": "通过LLM对话生成图片，建议在AstrBot面板的配置文件中调整「工具调用超时时间」，以适应图片生成需要"
+            }
+        }
+    },
+    "save_images": {
+        "description": "图片存储",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "local_save": {
+                "description": "本地存储",
+                "type": "bool",
+                "default": false,
+                "hint": "生成的图片保存到插件数据目录的 save_images 文件夹"
+            }
+        }
+    },
+    "whitelist_config": {
+        "description": "白名单配置",
+        "type": "object",
+        "hint": "",
+        "items": {
+            "enabled": {
+                "description": "启用群组白名单",
+                "type": "bool",
+                "default": false,
+                "hint": "开启后，只有在白名单内的群组可以使用"
+            },
+            "whitelist": {
+                "description": "群组UMO白名单",
+                "type": "list",
+                "default": [],
+                "hint": "白名单群组UMO列表，可在对应群内使用/sid获取。要把UMO写完整。"
+            },
+            "user_enabled": {
+                "description": "启用用户白名单",
+                "type": "bool",
+                "default": false,
+                "hint": "开启后，只有在白名单内的用户可以使用"
+            },
+            "user_whitelist": {
+                "description": "用户ID白名单",
+                "type": "list",
+                "default": [],
+                "hint": "用户QQ号列表"
+            }
+        }
+    }
+}

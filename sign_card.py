@@ -6,6 +6,7 @@
 import os
 import io
 import base64
+from datetime import datetime
 from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 
@@ -224,6 +225,12 @@ class SignCardRenderer:
             bbox = draw.textbbox((0, 0), lucky_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((text_center - text_width // 2, self.height - 50), lucky_text, font=font_normal, fill=self.bonus_color)
+
+        # 添加时间戳（避免复读检测）
+        time_text = datetime.now().strftime("%H:%M:%S")
+        bbox = draw.textbbox((0, 0), time_text, font=font_small)
+        text_width = bbox[2] - bbox[0]
+        draw.text((self.width - text_width - 20, self.height - 30), time_text, font=font_small, fill=(180, 180, 180))
 
         # 转换为 bytes
         buffer = io.BytesIO()

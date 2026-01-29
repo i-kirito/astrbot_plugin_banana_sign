@@ -1104,9 +1104,9 @@ class BananaSign(Star):
 
         # 添加生成耗时和剩余香蕉数
         if elapsed_time is not None and remaining_bananas is not None:
-            msg_chain.append(Comp.Plain(f"\n⏰生成时间: {elapsed_time} 🍌剩余香蕉: {remaining_bananas}"))
+            msg_chain.append(Comp.Plain(f"\n⏰耗时: {elapsed_time}   🍌剩余香蕉: {remaining_bananas}"))
         elif elapsed_time is not None:
-            msg_chain.append(Comp.Plain(f"\n⏰生成时间: {elapsed_time}"))
+            msg_chain.append(Comp.Plain(f"\n⏰耗时: {elapsed_time}"))
         elif remaining_bananas is not None:
             msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining_bananas}"))
 

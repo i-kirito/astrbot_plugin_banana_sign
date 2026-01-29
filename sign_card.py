@@ -76,6 +76,19 @@ class SignCardRenderer:
                     pass
         return None
 
+    def _load_background(self) -> Optional[Image.Image]:
+        """加载背景图片"""
+        bg_path = os.path.join(self.assets_dir, "sign.png")
+        if os.path.exists(bg_path):
+            try:
+                bg = Image.open(bg_path).convert("RGBA")
+                # 缩放到卡片尺寸
+                bg = bg.resize((self.width, self.height), Image.Resampling.LANCZOS)
+                return bg
+            except Exception:
+                pass
+        return None
+
     def render(
         self,
         reward: int,
@@ -103,8 +116,12 @@ class SignCardRenderer:
         Returns:
             PNG 图片的 bytes 数据
         """
-        # 创建画布
-        img = Image.new("RGBA", (self.width, self.height), self.bg_color)
+        # 创建画布（优先使用背景图片）
+        bg = self._load_background()
+        if bg:
+            img = bg.copy()
+        else:
+            img = Image.new("RGBA", (self.width, self.height), self.bg_color)
         draw = ImageDraw.Draw(img)
 
         # 加载字体

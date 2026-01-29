@@ -1,0 +1,26 @@
+{
+    "daily_reward": {
+        "type": "int",
+        "description": "每日签到奖励",
+        "hint": "用户每天签到可获得的香蕉数量",
+        "default": 1
+    },
+    "streak_bonus": {
+        "type": "int",
+        "description": "连续签到额外奖励",
+        "hint": "每连续签到7天，额外获得的香蕉数量",
+        "default": 1
+    },
+    "cost_per_draw": {
+        "type": "int",
+        "description": "每次画图消耗",
+        "hint": "使用 big_banana 画图每次消耗的香蕉数量",
+        "default": 1
+    },
+    "consume_enabled": {
+        "type": "bool",
+        "description": "启用积分消耗",
+        "hint": "开启后画图需要消耗香蕉积分，关闭则不限制",
+        "default": true
+    }
+}

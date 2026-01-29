@@ -1,0 +1,6 @@
+name: astrbot_plugin_banana_sign
+display_name: 香蕉签到系统
+desc: 每日签到获得香蕉积分，可兑换特定功能权限
+version: 1.0.0
+author: ikirito
+repo: https://github.com/i-kirito/astrbot_plugin_banana_sign

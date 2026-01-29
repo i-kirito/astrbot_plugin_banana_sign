@@ -28,35 +28,37 @@ class SignCardRenderer:
         self.success_color = (100, 180, 100)  # 绿色成功
         self.bonus_color = (255, 100, 100)  # 红色奖励
 
-    def _find_font(self) -> str:
-        """查找可用的中文字体"""
-        # 常见中文字体路径
+    def _find_font(self) -> tuple:
+        """查找可用的中文粗体字体，返回 (路径, 字体索引)"""
+        # 常见中文粗体字体路径 (路径, 索引)
+        # PingFang.ttc: 0=Regular, 1=Medium, 2=Semibold
         font_paths = [
-            # macOS
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            # Linux
-            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            # Windows
-            "C:/Windows/Fonts/msyh.ttc",
-            "C:/Windows/Fonts/simhei.ttf",
+            # macOS 粗体
+            ("/System/Library/Fonts/PingFang.ttc", 2),  # Semibold
+            ("/System/Library/Fonts/Supplemental/Songti.ttc", 1),  # Bold
+            ("/System/Library/Fonts/STHeiti Medium.ttc", 0),
+            # Linux 粗体
+            ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", 0),
+            ("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc", 0),
+            # Windows 粗体
+            ("C:/Windows/Fonts/msyhbd.ttc", 0),  # 微软雅黑粗体
+            ("C:/Windows/Fonts/simhei.ttf", 0),
             # 插件内置字体
-            os.path.join(self.assets_dir, "font.ttf"),
+            (os.path.join(self.assets_dir, "font.ttf"), 0),
         ]
 
-        for path in font_paths:
+        for path, index in font_paths:
             if os.path.exists(path):
-                return path
+                return (path, index)
 
-        return None  # 使用默认字体
+        return (None, 0)  # 使用默认字体
 
     def _load_font(self, size: int) -> ImageFont.FreeTypeFont:
-        """加载字体"""
+        """加载粗体字体"""
         try:
-            if self.font_path:
-                return ImageFont.truetype(self.font_path, size)
+            font_path, font_index = self.font_path
+            if font_path:
+                return ImageFont.truetype(font_path, size, index=font_index)
         except Exception:
             pass
         return ImageFont.load_default()

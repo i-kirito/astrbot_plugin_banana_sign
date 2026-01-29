@@ -68,6 +68,9 @@ class BananaSign(Star):
         self.streak_bonus = sign_config.get("streak_bonus", 1)
         self.cost_per_draw = sign_config.get("cost_per_draw", 1)
         self.consume_enabled = sign_config.get("consume_enabled", True)
+        # 幸运星随机奖励配置
+        self.lucky_min = sign_config.get("lucky_min", 0)  # 随机奖励最小值
+        self.lucky_max = sign_config.get("lucky_max", 0)  # 随机奖励最大值
 
         # ========== 画图功能初始化 ==========
         # 初始化常规配置和图片生成配置
@@ -1114,9 +1117,20 @@ class BananaSign(Star):
 
         reward = self.daily_reward
         bonus_msg = ""
+        lucky_msg = ""
+
+        # 连续签到 7 天奖励
         if user["streak"] % 7 == 0:
             reward += self.streak_bonus
             bonus_msg = f"\n🎁 连续 {user['streak']} 天，额外 +{self.streak_bonus} 香蕉！"
+
+        # 幸运星随机奖励
+        if self.lucky_max > 0:
+            import random
+            lucky_reward = random.randint(self.lucky_min, self.lucky_max)
+            if lucky_reward > 0:
+                reward += lucky_reward
+                lucky_msg = f"\n⭐ 幸运星降临！随机 +{lucky_reward} 香蕉！"
 
         user["bananas"] += reward
         user["total_signs"] += 1
@@ -1126,7 +1140,7 @@ class BananaSign(Star):
         yield event.plain_result(
             f"🍌 签到成功！\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"获得: +{reward} 香蕉{bonus_msg}\n"
+            f"获得: +{reward} 香蕉{bonus_msg}{lucky_msg}\n"
             f"当前余额: {user['bananas']} 香蕉\n"
             f"连续签到: {user['streak']} 天\n"
             f"累计签到: {user['total_signs']} 次\n"

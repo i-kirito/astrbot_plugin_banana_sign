@@ -85,7 +85,7 @@ class BananaSignPlugin(Star):
                 "astrbot_plugin_big_banana_config.json"
             )
             if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, 'r', encoding='utf-8-sig') as f:
                     config = json.load(f)
                     prompts = config.get("prompt", [])
                     for item in prompts:

@@ -1174,11 +1174,11 @@ class BananaSign(Star):
 
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("香蕉添加", alias={"添加香蕉"})
-    async def add_banana_cmd(self, event: AstrMessageEvent, target_id: str = "", amount: str = ""):
-        """管理员手动添加香蕉积分，支持 @用户"""
+    @filter.command("香蕉设置", alias={"设置香蕉"})
+    async def set_banana_cmd(self, event: AstrMessageEvent, target_id: str = "", amount: str = ""):
+        """管理员设置用户香蕉额度，支持 @用户"""
         if not self.is_global_admin(event):
-            logger.info(f"用户 {event.get_sender_id()} 试图执行管理员命令 香蕉添加，权限不足")
+            logger.info(f"用户 {event.get_sender_id()} 试图执行管理员命令 香蕉设置，权限不足")
             return
 
         # 支持 @用户 获取目标ID
@@ -1197,40 +1197,41 @@ class BananaSign(Star):
         if not final_target_id or not final_amount:
             yield event.plain_result(
                 "❌ 格式错误\n"
-                "用法1：/香蕉添加 @用户 <数量>\n"
-                "用法2：/香蕉添加 <用户ID> <数量>\n"
-                "示例：/香蕉添加 @某人 10"
+                "用法1：/香蕉设置 @用户 <数量>\n"
+                "用法2：/香蕉设置 <用户ID> <数量>\n"
+                "示例：/香蕉设置 @某人 10"
             )
             return
 
         try:
-            add_amount = int(final_amount)
+            new_amount = int(final_amount)
         except ValueError:
             yield event.plain_result("❌ 数量必须是整数")
             return
 
         user = self._get_user(final_target_id)
-        user["bananas"] += add_amount
+        old_amount = user["bananas"]
+        user["bananas"] = new_amount
         self._save_sign_data()
 
         display_id = f"{final_target_id[:4]}***{final_target_id[-2:]}" if len(final_target_id) > 6 else final_target_id
         yield event.plain_result(
-            f"🍌 香蕉积分已添加\n"
+            f"🍌 香蕉额度已设置\n"
             f"━━━━━━━━━━━━━━━\n"
             f"用户: {display_id}\n"
-            f"添加: {'+' if add_amount >= 0 else ''}{add_amount} 香蕉\n"
-            f"当前余额: {user['bananas']} 香蕉"
+            f"原额度: {old_amount} 香蕉\n"
+            f"新额度: {new_amount} 香蕉"
         )
-        logger.info(f"[BananaSign] 管理员 {event.get_sender_id()} 为用户 {final_target_id} 添加 {add_amount} 香蕉")
+        logger.info(f"[BananaSign] 管理员 {event.get_sender_id()} 将用户 {final_target_id} 香蕉设置为 {new_amount}")
 
     @filter.command("签到帮助")
     async def sign_help(self, event: AstrMessageEvent):
         """显示签到帮助"""
         yield event.plain_result(
             f"🍌 香蕉签到系统\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━\n"
             f"【签到指令】\n"
-            f"  /签到        每日签到获取香蕉\n"
+            f"  /签到       每日签到获取香蕉\n"
             f"  /香蕉余额    查看当前积分\n"
             f"  /签到排行    查看排行榜\n"
             f"\n"
@@ -1240,5 +1241,5 @@ class BananaSign(Star):
             f"\n"
             f"【消耗规则】\n"
             f"  画图消耗: {self.cost_per_draw} 香蕉/次\n"
-            f"━━━━━━━━━━━━━━━━━━━━"
+            f"━━━━━━━━━━━━━━━"
         )

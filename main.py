@@ -839,6 +839,8 @@ class BananaSign(Star):
         logger.debug(
             f"生成图片应用参数: { {k: v for k, v in params.items() if k != 'prompt'} }"
         )
+        # 记录开始时间
+        start_time = datetime.now()
         # 调用作图任务
         task = asyncio.create_task(self.job(event, params, image_urls=image_urls))
         task_id = event.message_obj.message_id
@@ -855,9 +857,13 @@ class BananaSign(Star):
                 )
                 return
 
+            # 计算耗时
+            elapsed = datetime.now() - start_time
+            elapsed_str = f"{int(elapsed.total_seconds() // 60):02d}:{int(elapsed.total_seconds() % 60):02d}"
+
             # 组装消息链
             remaining = self._get_user(str(event.get_sender_id()))["bananas"] if self.consume_enabled else None
-            msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining)
+            msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
 
             # ========== 画图成功，消耗积分 ==========
             if self.consume_enabled:
@@ -1079,7 +1085,7 @@ class BananaSign(Star):
         return None, err
 
     def build_message_chain(
-        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int = None
+        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int = None, elapsed_time: str = None
     ) -> list[BaseMessageComponent]:
         """构建消息链"""
         msg_chain: list[BaseMessageComponent] = [
@@ -1096,10 +1102,13 @@ class BananaSign(Star):
             # 其他平台直接发送图片
             msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in results)
 
-        # 添加生成时间和剩余香蕉数
-        if remaining_bananas is not None:
-            gen_time = datetime.now().strftime("%H:%M")
-            msg_chain.append(Comp.Plain(f"\n生成时间: {gen_time}  剩余香蕉: {remaining_bananas}"))
+        # 添加生成耗时和剩余香蕉数
+        if elapsed_time is not None and remaining_bananas is not None:
+            msg_chain.append(Comp.Plain(f"\n⏰生成时间: {elapsed_time} 🍌剩余香蕉: {remaining_bananas}"))
+        elif elapsed_time is not None:
+            msg_chain.append(Comp.Plain(f"\n⏰生成时间: {elapsed_time}"))
+        elif remaining_bananas is not None:
+            msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining_bananas}"))
 
         return msg_chain
 

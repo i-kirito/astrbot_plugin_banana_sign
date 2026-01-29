@@ -78,15 +78,21 @@ class SignCardRenderer:
 
     def _load_background(self) -> Optional[Image.Image]:
         """加载背景图片"""
-        bg_path = os.path.join(self.assets_dir, "sign.png")
-        if os.path.exists(bg_path):
-            try:
-                bg = Image.open(bg_path).convert("RGBA")
-                # 缩放到卡片尺寸
-                bg = bg.resize((self.width, self.height), Image.Resampling.LANCZOS)
-                return bg
-            except Exception:
-                pass
+        # 优先从插件根目录加载，其次从 assets 目录
+        plugin_dir = os.path.dirname(os.path.abspath(__file__))
+        bg_paths = [
+            os.path.join(plugin_dir, "sign.png"),  # 插件根目录
+            os.path.join(self.assets_dir, "sign.png"),  # assets 目录
+        ]
+        for bg_path in bg_paths:
+            if os.path.exists(bg_path):
+                try:
+                    bg = Image.open(bg_path).convert("RGBA")
+                    # 缩放到卡片尺寸
+                    bg = bg.resize((self.width, self.height), Image.Resampling.LANCZOS)
+                    return bg
+                except Exception:
+                    pass
         return None
 
     def render(

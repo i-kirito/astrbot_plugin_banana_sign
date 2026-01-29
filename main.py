@@ -138,11 +138,11 @@ class BananaSignPlugin(Star):
 
     # ========== 高优先级消息拦截器 ==========
 
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def intercept_big_banana(self, event: AstrMessageEvent):
         """
         高优先级拦截器：在 big_banana 处理之前检查积分
-        priority=1 确保在 big_banana (priority=5) 之前执行
+        priority=10 确保在 big_banana (priority=5) 之前执行
         """
         if not self.consume_enabled:
             return  # 未启用积分消耗，放行

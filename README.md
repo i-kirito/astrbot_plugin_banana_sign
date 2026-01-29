@@ -64,7 +64,7 @@ banana_sign.add_banana(user_id, amount=1)
 
 ## 📝 版本历史
 
-### v1.0.1
+### v1.0.2
 - [Fix] 修复拦截器优先级，改为 priority=10 确保在 big_banana 之前执行
 
 ### v1.0.0

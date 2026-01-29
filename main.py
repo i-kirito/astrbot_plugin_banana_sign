@@ -79,25 +79,19 @@ class BananaSignPlugin(Star):
             return
 
         try:
-            # 尝试从已加载的插件中获取 big_banana 的触发词
-            if hasattr(self.context, 'stars'):
-                for star in self.context.stars:
-                    if hasattr(star, 'prompt_dict') and isinstance(star.prompt_dict, dict):
-                        self.big_banana_triggers = set(star.prompt_dict.keys())
-                        logger.info(f"[BananaSign] 已加载 big_banana 触发词: {len(self.big_banana_triggers)} 个")
-                        self._triggers_loaded = True
-                        return
-
-            # 备用方案：从配置文件加载
+            # 从 AstrBot 配置文件加载（正确路径）
             config_path = os.path.join(
-                os.getcwd(), "data", "plugins",
-                "astrbot_plugin_big_banana", "config.json"
+                os.getcwd(), "data", "config",
+                "astrbot_plugin_big_banana_config.json"
             )
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     prompts = config.get("prompt", [])
                     for item in prompts:
+                        if not item:
+                            continue
+                        # 提取第一个词作为触发词
                         cmd = item.split()[0] if item else ""
                         if cmd.startswith("[") and cmd.endswith("]"):
                             # 多触发词格式 [cmd1,cmd2]
@@ -106,8 +100,10 @@ class BananaSignPlugin(Star):
                                     self.big_banana_triggers.add(c.strip())
                         elif cmd:
                             self.big_banana_triggers.add(cmd)
-                    logger.info(f"[BananaSign] 从配置加载 big_banana 触发词: {len(self.big_banana_triggers)} 个")
+                    logger.info(f"[BananaSign] 已加载 big_banana 触发词: {self.big_banana_triggers}")
                     self._triggers_loaded = True
+            else:
+                logger.warning(f"[BananaSign] big_banana 配置文件不存在: {config_path}")
         except Exception as e:
             logger.warning(f"[BananaSign] 加载 big_banana 触发词失败: {e}")
 

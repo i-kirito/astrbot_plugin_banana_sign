@@ -856,7 +856,8 @@ class BananaSign(Star):
                 return
 
             # 组装消息链
-            msg_chain = self.build_message_chain(event, results)
+            remaining = self._get_user(str(event.get_sender_id()))["bananas"] if self.consume_enabled else None
+            msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining)
 
             # ========== 画图成功，消耗积分 ==========
             if self.consume_enabled:
@@ -1078,7 +1079,7 @@ class BananaSign(Star):
         return None, err
 
     def build_message_chain(
-        self, event: AstrMessageEvent, results: list[tuple[str, str]]
+        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int = None
     ) -> list[BaseMessageComponent]:
         """构建消息链"""
         msg_chain: list[BaseMessageComponent] = [
@@ -1091,10 +1092,15 @@ class BananaSign(Star):
             save_results = save_images(results, self.temp_dir)
             for name_, path_ in save_results:
                 msg_chain.append(Comp.File(name=name_, file=str(path_)))
-            return msg_chain
+        else:
+            # 其他平台直接发送图片
+            msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in results)
 
-        # 其他平台直接发送图片
-        msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in results)
+        # 添加生成时间和剩余香蕉数
+        if remaining_bananas is not None:
+            gen_time = datetime.now().strftime("%H:%M")
+            msg_chain.append(Comp.Plain(f"\n生成时间: {gen_time}  剩余香蕉: {remaining_bananas}"))
+
         return msg_chain
 
     async def terminate(self):

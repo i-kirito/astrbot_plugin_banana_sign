@@ -27,6 +27,18 @@
                 "type": "bool",
                 "default": true,
                 "hint": "关闭后画图不消耗积分"
+            },
+            "lucky_range": {
+                "description": "幸运星随机奖励",
+                "type": "string",
+                "default": "0-0",
+                "hint": "格式: 最小值-最大值，例如 1-5 表示随机奖励1~5香蕉。设为 0-0 则不启用幸运星"
+            },
+            "card_enabled": {
+                "description": "启用签到卡片",
+                "type": "bool",
+                "default": true,
+                "hint": "启用后签到结果以图片卡片形式展示，需要安装Pillow依赖"
             }
         }
     },

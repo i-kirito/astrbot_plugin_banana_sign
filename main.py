@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import os
 import json
+import random
 from datetime import datetime, date
 from typing import Dict, Any
 
@@ -68,9 +69,15 @@ class BananaSign(Star):
         self.streak_bonus = sign_config.get("streak_bonus", 1)
         self.cost_per_draw = sign_config.get("cost_per_draw", 1)
         self.consume_enabled = sign_config.get("consume_enabled", True)
-        # 幸运星随机奖励配置
-        self.lucky_min = sign_config.get("lucky_min", 0)  # 随机奖励最小值
-        self.lucky_max = sign_config.get("lucky_max", 0)  # 随机奖励最大值
+        # 幸运星随机奖励配置（格式: "min-max"）
+        lucky_range = sign_config.get("lucky_range", "0-0")
+        try:
+            parts = lucky_range.split("-")
+            self.lucky_min = int(parts[0])
+            self.lucky_max = int(parts[1]) if len(parts) > 1 else self.lucky_min
+        except (ValueError, IndexError):
+            self.lucky_min = 0
+            self.lucky_max = 0
 
         # ========== 画图功能初始化 ==========
         # 初始化常规配置和图片生成配置
@@ -100,6 +107,23 @@ class BananaSign(Star):
         self.save_dir = data_dir / "save_images"
         # 临时文件目录
         self.temp_dir = data_dir / "temp_images"
+        # 签到卡片资源目录
+        self.assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        if not os.path.exists(self.assets_dir):
+            os.makedirs(self.assets_dir, exist_ok=True)
+
+        # 签到卡片渲染配置
+        self.sign_card_enabled = sign_config.get("card_enabled", True)
+
+        # 初始化签到卡片渲染器
+        self.sign_card_renderer = None
+        if self.sign_card_enabled:
+            try:
+                from .sign_card import SignCardRenderer
+                self.sign_card_renderer = SignCardRenderer(self.assets_dir)
+                logger.info("[BananaSign] 签到卡片渲染器已加载")
+            except Exception as e:
+                logger.warning(f"[BananaSign] 签到卡片渲染器加载失败: {e}")
 
         # 图片持久化
         self.save_images = self.conf.get("save_images", {}).get("local_save", False)
@@ -1092,7 +1116,27 @@ class BananaSign(Star):
         today = date.today().isoformat()
         last_sign = user.get("last_sign")
 
+        # 已签到情况
         if last_sign == today:
+            # 尝试使用卡片渲染
+            if self.sign_card_renderer:
+                try:
+                    img_bytes = self.sign_card_renderer.render(
+                        reward=0,
+                        daily_reward=self.daily_reward,
+                        streak_bonus=0,
+                        lucky_reward=0,
+                        total_bananas=user["bananas"],
+                        total_signs=user["total_signs"],
+                        streak=user["streak"],
+                        already_signed=True,
+                    )
+                    yield event.chain_result([Comp.Image.fromBytes(img_bytes)])
+                    return
+                except Exception as e:
+                    logger.warning(f"[BananaSign] 签到卡片渲染失败: {e}")
+
+            # 降级为文本
             yield event.plain_result(
                 f"🍌 今天已经签到过了~\n"
                 f"━━━━━━━━━━━━━━━\n"
@@ -1103,6 +1147,7 @@ class BananaSign(Star):
             )
             return
 
+        # 计算连续签到
         if last_sign:
             try:
                 last_date = datetime.strptime(last_sign, "%Y-%m-%d").date()
@@ -1116,26 +1161,50 @@ class BananaSign(Star):
             user["streak"] = 1
 
         reward = self.daily_reward
-        bonus_msg = ""
-        lucky_msg = ""
+        streak_bonus_reward = 0
+        lucky_reward = 0
 
         # 连续签到 7 天奖励
         if user["streak"] % 7 == 0:
-            reward += self.streak_bonus
-            bonus_msg = f"\n🎁 连续 {user['streak']} 天，额外 +{self.streak_bonus} 香蕉！"
+            streak_bonus_reward = self.streak_bonus
+            reward += streak_bonus_reward
 
         # 幸运星随机奖励
         if self.lucky_max > 0:
-            import random
             lucky_reward = random.randint(self.lucky_min, self.lucky_max)
             if lucky_reward > 0:
                 reward += lucky_reward
-                lucky_msg = f"\n⭐ 幸运星降临！随机 +{lucky_reward} 香蕉！"
 
         user["bananas"] += reward
         user["total_signs"] += 1
         user["last_sign"] = today
         self._save_sign_data()
+
+        # 尝试使用卡片渲染
+        if self.sign_card_renderer:
+            try:
+                img_bytes = self.sign_card_renderer.render(
+                    reward=reward,
+                    daily_reward=self.daily_reward,
+                    streak_bonus=streak_bonus_reward,
+                    lucky_reward=lucky_reward,
+                    total_bananas=user["bananas"],
+                    total_signs=user["total_signs"],
+                    streak=user["streak"],
+                    already_signed=False,
+                )
+                yield event.chain_result([Comp.Image.fromBytes(img_bytes)])
+                return
+            except Exception as e:
+                logger.warning(f"[BananaSign] 签到卡片渲染失败: {e}")
+
+        # 降级为文本
+        bonus_msg = ""
+        lucky_msg = ""
+        if streak_bonus_reward > 0:
+            bonus_msg = f"\n🎁 连续 {user['streak']} 天，额外 +{streak_bonus_reward} 香蕉！"
+        if lucky_reward > 0:
+            lucky_msg = f"\n⭐ 幸运星降临！随机 +{lucky_reward} 香蕉！"
 
         yield event.plain_result(
             f"🍌 签到成功！\n"

@@ -2,15 +2,15 @@
 
 ## 🍌 简介
 
-**astrbot_plugin_banana_sign** 是一个简单的签到积分系统插件。
+**astrbot_plugin_banana_sign** 是一个签到积分系统插件。
 
-用户通过每日签到获得香蕉积分，**每次画图消耗 1 个香蕉**。
+用户通过每日签到获得香蕉积分，使用 `astrbot_plugin_big_banana` 画图时自动消耗积分。
 
 ## ✨ 功能特性
 
 - 🗓️ **每日签到**：每天签到获得香蕉积分
 - 🔥 **连续奖励**：连续签到7天可获得额外奖励
-- 🎨 **积分画图**：消耗香蕉使用画图功能
+- 🎨 **积分控制**：自动拦截 big_banana 画图请求，消耗积分
 - 🏆 **排行榜**：查看积分排行榜
 - 💾 **数据持久化**：签到记录和积分永久保存
 
@@ -26,7 +26,6 @@
 |------|------|
 | `/签到` | 每日签到获得香蕉积分 |
 | `/香蕉余额` | 查看当前积分和使用统计 |
-| `/画图 <描述>` | 消耗香蕉进行画图 |
 | `/签到排行` | 查看积分排行榜 Top 10 |
 | `/签到帮助` | 显示帮助信息 |
 
@@ -36,16 +35,23 @@
 |--------|------|--------|
 | `daily_reward` | 每日签到奖励的香蕉数量 | 1 |
 | `streak_bonus` | 连续签到7天的额外奖励 | 1 |
-| `use_cost` | 每次画图消耗的香蕉数量 | 1 |
+| `cost_per_draw` | 每次画图消耗的香蕉数量 | 1 |
+| `consume_enabled` | 是否启用积分消耗 | true |
 
-## 🔗 供其他插件调用的 API
+## 🔗 与 big_banana 插件联动
 
-本插件提供以下方法供其他插件调用：
+本插件通过高优先级消息拦截器 (priority=10) 自动控制 `astrbot_plugin_big_banana` 的画图权限：
+
+1. 用户发送画图指令（如 `bnt 画一张图`）
+2. 本插件先拦截，检查用户积分
+3. 积分足够 → 扣除积分，放行给 big_banana 处理
+4. 积分不足 → 提示用户签到，阻止画图
+
+**无需修改 big_banana 插件代码**，原插件更新不受影响。
+
+## 🔧 供其他插件调用的 API
 
 ```python
-# 获取插件实例
-banana_sign = context.get_plugin("astrbot_plugin_banana_sign")
-
 # 查询用户余额
 balance = banana_sign.get_balance(user_id)
 
@@ -58,13 +64,15 @@ banana_sign.add_banana(user_id, amount=1)
 
 ## 📝 版本历史
 
+### v1.0.1
+- [Fix] 修复拦截器优先级，改为 priority=10 确保在 big_banana 之前执行
+
 ### v1.0.0
 - [Feat] 初始版本
 - [Feat] 每日签到功能
 - [Feat] 连续签到奖励
-- [Feat] `/画图` 指令消耗积分画图
+- [Feat] 高优先级拦截器控制 big_banana 画图消耗
 - [Feat] 排行榜功能
-- [Feat] 供其他插件调用的 API
 
 ---
 *Generated with ❤️ by AstrBot*

@@ -6,9 +6,12 @@
 import os
 import io
 import base64
+import logging
 from datetime import datetime
 from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger("astrbot")
 
 
 class SignCardRenderer:
@@ -17,6 +20,7 @@ class SignCardRenderer:
     def __init__(self, assets_dir: str):
         self.assets_dir = assets_dir
         self.font_path = self._find_font()
+        self.mono_font_path = self._find_mono_font()
 
         # 卡片尺寸
         self.width = 800
@@ -54,15 +58,38 @@ class SignCardRenderer:
 
         return (None, 0)  # 使用默认字体
 
+    def _find_mono_font(self) -> Optional[str]:
+        """查找可用的等宽字体"""
+        mono_font_paths = [
+            "/System/Library/Fonts/Monaco.ttf",
+            "/System/Library/Fonts/Menlo.ttc",
+            "/System/Library/Fonts/SFMono-Regular.otf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "C:/Windows/Fonts/consola.ttf",
+        ]
+        for path in mono_font_paths:
+            if os.path.exists(path):
+                return path
+        return None
+
     def _load_font(self, size: int) -> ImageFont.FreeTypeFont:
         """加载粗体字体"""
         try:
             font_path, font_index = self.font_path
             if font_path:
                 return ImageFont.truetype(font_path, size, index=font_index)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[SignCard] 加载字体失败: {e}")
         return ImageFont.load_default()
+
+    def _load_mono_font(self, size: int) -> ImageFont.FreeTypeFont:
+        """加载等宽字体"""
+        try:
+            if self.mono_font_path:
+                return ImageFont.truetype(self.mono_font_path, size)
+        except Exception as e:
+            logger.debug(f"[SignCard] 加载等宽字体失败: {e}")
+        return self._load_font(size)
 
     def _load_character_image(self, side: str) -> Optional[Image.Image]:
         """加载角色装饰图片"""
@@ -75,8 +102,8 @@ class SignCardRenderer:
                 try:
                     img = Image.open(path).convert("RGBA")
                     return img
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[SignCard] 加载角色图片失败 {path}: {e}")
         return None
 
     def _load_background(self) -> Optional[Image.Image]:
@@ -94,8 +121,8 @@ class SignCardRenderer:
                     # 缩放到卡片尺寸
                     bg = bg.resize((self.width, self.height), Image.Resampling.LANCZOS)
                     return bg
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[SignCard] 加载背景图片失败 {bg_path}: {e}")
         return None
 
     def render(
@@ -228,9 +255,10 @@ class SignCardRenderer:
 
         # 添加时间戳（避免复读检测）
         time_text = datetime.now().strftime("%H:%M:%S")
-        bbox = draw.textbbox((0, 0), time_text, font=font_small)
+        mono_font = self._load_mono_font(13)
+        bbox = draw.textbbox((0, 0), time_text, font=mono_font)
         text_width = bbox[2] - bbox[0]
-        draw.text((self.width - text_width - 20, self.height - 30), time_text, font=font_small, fill=(180, 180, 180))
+        draw.text((self.width - text_width - 25, self.height - 32), time_text, font=mono_font, fill=(150, 150, 150))
 
         # 转换为 bytes
         buffer = io.BytesIO()

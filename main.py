@@ -76,6 +76,7 @@ class BananaSign(Star):
             self.lucky_min = int(parts[0])
             self.lucky_max = int(parts[1]) if len(parts) > 1 else self.lucky_min
         except (ValueError, IndexError):
+            logger.warning(f"[BananaSign] lucky_range 配置格式错误: {lucky_range}，已使用默认值 0-0")
             self.lucky_min = 0
             self.lucky_max = 0
 
@@ -861,10 +862,14 @@ class BananaSign(Star):
             if self.consume_enabled:
                 user_id = str(event.get_sender_id())
                 user = self._get_user(user_id)
-                user["bananas"] -= self.cost_per_draw
-                user["total_used"] += self.cost_per_draw
-                self._save_sign_data()
-                logger.info(f"[BananaSign] 用户 {user_id} 消耗 {self.cost_per_draw} 香蕉画图，剩余 {user['bananas']}")
+                # 再次检查余额，防止竞态条件
+                if user["bananas"] >= self.cost_per_draw:
+                    user["bananas"] -= self.cost_per_draw
+                    user["total_used"] += self.cost_per_draw
+                    self._save_sign_data()
+                    logger.info(f"[BananaSign] 用户 {user_id} 消耗 {self.cost_per_draw} 香蕉画图，剩余 {user['bananas']}")
+                else:
+                    logger.warning(f"[BananaSign] 用户 {user_id} 余额不足，跳过扣费")
 
             yield event.chain_result(msg_chain)
         except asyncio.CancelledError:
@@ -1155,7 +1160,7 @@ class BananaSign(Star):
                     user["streak"] += 1
                 else:
                     user["streak"] = 1
-            except:
+            except ValueError:
                 user["streak"] = 1
         else:
             user["streak"] = 1

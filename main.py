@@ -1297,7 +1297,7 @@ class BananaSign(Star):
 
     @filter.command("签到排行")
     async def leaderboard(self, event: AstrMessageEvent):
-        """签到排行榜"""
+        """签到排行榜（合并转发形式）"""
         users = self.user_data.get("users", {})
         if not users:
             yield event.plain_result("暂无签到记录")
@@ -1309,14 +1309,36 @@ class BananaSign(Star):
             reverse=True
         )[:10]
 
-        lines = ["🏆 香蕉排行榜 Top 10", "━━━━━━━━━━━━━━━"]
+        # 构建合并转发消息
         medals = ["🥇", "🥈", "🥉"]
+        nodes = []
+
+        # 标题节点
+        nodes.append(Comp.Node(
+            name="🏆 香蕉排行榜",
+            content=[Comp.Plain("🏆 香蕉排行榜 Top 10\n━━━━━━━━━━━━━━━")]
+        ))
+
+        # 排行节点
         for i, (uid, data) in enumerate(sorted_users):
             medal = medals[i] if i < 3 else f"{i+1}."
             display_id = f"{uid[:4]}***{uid[-2:]}" if len(uid) > 6 else uid
-            lines.append(f"{medal} {display_id}: {data.get('bananas', 0)} 🍌")
+            bananas = data.get('bananas', 0)
+            total_signs = data.get('total_signs', 0)
+            streak = data.get('streak', 0)
 
-        yield event.plain_result("\n".join(lines))
+            content = (
+                f"{medal} {display_id}\n"
+                f"🍌 香蕉: {bananas}\n"
+                f"📅 累计签到: {total_signs} 次\n"
+                f"🔥 连续签到: {streak} 天"
+            )
+            nodes.append(Comp.Node(
+                name=f"第{i+1}名",
+                content=[Comp.Plain(content)]
+            ))
+
+        yield event.chain_result([Comp.Nodes(nodes)])
 
     @filter.command("香蕉设置", alias={"设置香蕉"})
     async def set_banana_cmd(self, event: AstrMessageEvent, target_id: str = "", amount: str = ""):

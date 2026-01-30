@@ -39,6 +39,12 @@
                 "type": "bool",
                 "default": true,
                 "hint": "启用后签到结果以图片卡片形式展示，需要安装Pillow依赖"
+            },
+            "max_daily_draws": {
+                "description": "单人每日最大生成数",
+                "type": "int",
+                "default": 0,
+                "hint": "每人每天最多生成图片次数，设为 0 表示不限制"
             }
         }
     },

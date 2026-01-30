@@ -79,6 +79,8 @@ class BananaSign(Star):
             logger.warning(f"[BananaSign] lucky_range 配置格式错误: {lucky_range}，已使用默认值 0-0")
             self.lucky_min = 0
             self.lucky_max = 0
+        # 单人每日最大生成数（0 表示不限制）
+        self.max_daily_draws = sign_config.get("max_daily_draws", 0)
 
         # ========== 画图功能初始化 ==========
         # 初始化常规配置和图片生成配置
@@ -163,7 +165,9 @@ class BananaSign(Star):
                 "total_signs": 0,
                 "streak": 0,
                 "last_sign": None,
-                "total_used": 0
+                "total_used": 0,
+                "daily_draws": 0,
+                "last_draw_date": None
             }
         return self.user_data["users"][user_id]
 
@@ -722,6 +726,27 @@ class BananaSign(Star):
                 )
                 return
 
+        # ========== 每日生成次数检查 ==========
+        if self.max_daily_draws > 0:
+            user_id = str(event.get_sender_id())
+            user = self._get_user(user_id)
+            today = date.today().isoformat()
+            # 如果是新的一天，重置计数
+            if user.get("last_draw_date") != today:
+                user["daily_draws"] = 0
+                user["last_draw_date"] = today
+            # 检查是否超过限制
+            if user["daily_draws"] >= self.max_daily_draws:
+                yield event.plain_result(
+                    f"🎨 今日生成次数已达上限！\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"今日已生成: {user['daily_draws']} 次\n"
+                    f"每日上限: {self.max_daily_draws} 次\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"💡 明天再来吧~"
+                )
+                return
+
         # 群白名单判断
         if (
             self.group_whitelist_enabled
@@ -877,6 +902,18 @@ class BananaSign(Star):
                     logger.info(f"[BananaSign] 用户 {user_id} 消耗 {self.cost_per_draw} 香蕉画图，剩余 {user['bananas']}")
                 else:
                     logger.warning(f"[BananaSign] 用户 {user_id} 余额不足，跳过扣费")
+
+            # ========== 画图成功，增加每日生成计数 ==========
+            if self.max_daily_draws > 0:
+                user_id = str(event.get_sender_id())
+                user = self._get_user(user_id)
+                today = date.today().isoformat()
+                if user.get("last_draw_date") != today:
+                    user["daily_draws"] = 0
+                    user["last_draw_date"] = today
+                user["daily_draws"] += 1
+                self._save_sign_data()
+                logger.info(f"[BananaSign] 用户 {user_id} 今日生成次数: {user['daily_draws']}/{self.max_daily_draws}")
 
             yield event.chain_result(msg_chain)
         except asyncio.CancelledError:

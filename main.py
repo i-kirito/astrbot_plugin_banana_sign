@@ -344,8 +344,9 @@ class BananaSign(Star):
     def is_global_admin(self, event: AstrMessageEvent) -> bool:
         """检查发送者是否为全局管理员"""
         admin_ids = self.context.get_config().get("admins_id", [])
-        # logger.info(f"全局管理员列表：{admin_ids}")
-        return event.get_sender_id() in admin_ids
+        sender_id = str(event.get_sender_id())
+        # 统一转为字符串比较，避免类型不匹配
+        return sender_id in [str(aid) for aid in admin_ids]
 
     # === 管理指令：白名单管理 ===
     @filter.command("lm白名单添加", alias={"lmawl"})

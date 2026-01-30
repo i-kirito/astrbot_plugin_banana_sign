@@ -714,6 +714,7 @@ class BananaSign(Star):
 
         # ========== 积分检查（管理员跳过）==========
         is_admin = self.is_global_admin(event)
+        logger.debug(f"[BananaSign] 用户 {event.get_sender_id()} 管理员状态: {is_admin}")
         if self.consume_enabled and not is_admin:
             user_id = str(event.get_sender_id())
             user = self._get_user(user_id)

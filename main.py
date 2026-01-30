@@ -711,8 +711,9 @@ class BananaSign(Star):
         if cmd not in self.prompt_dict:
             return
 
-        # ========== 积分检查 ==========
-        if self.consume_enabled:
+        # ========== 积分检查（管理员跳过）==========
+        is_admin = self.is_global_admin(event)
+        if self.consume_enabled and not is_admin:
             user_id = str(event.get_sender_id())
             user = self._get_user(user_id)
             if user["bananas"] < self.cost_per_draw:
@@ -726,8 +727,8 @@ class BananaSign(Star):
                 )
                 return
 
-        # ========== 每日生成次数检查 ==========
-        if self.max_daily_draws > 0:
+        # ========== 每日生成次数检查（管理员跳过）==========
+        if self.max_daily_draws > 0 and not is_admin:
             user_id = str(event.get_sender_id())
             user = self._get_user(user_id)
             today = date.today().isoformat()
@@ -886,12 +887,15 @@ class BananaSign(Star):
             elapsed = datetime.now() - start_time
             elapsed_str = f"{int(elapsed.total_seconds() // 60):02d}:{int(elapsed.total_seconds() % 60):02d}"
 
-            # 组装消息链
-            remaining = self._get_user(str(event.get_sender_id()))["bananas"] if self.consume_enabled else None
+            # 组装消息链（管理员显示 ∞）
+            if self.consume_enabled:
+                remaining = "∞" if is_admin else self._get_user(str(event.get_sender_id()))["bananas"]
+            else:
+                remaining = None
             msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
 
-            # ========== 画图成功，消耗积分 ==========
-            if self.consume_enabled:
+            # ========== 画图成功，消耗积分（管理员跳过）==========
+            if self.consume_enabled and not is_admin:
                 user_id = str(event.get_sender_id())
                 user = self._get_user(user_id)
                 # 再次检查余额，防止竞态条件
@@ -903,8 +907,8 @@ class BananaSign(Star):
                 else:
                     logger.warning(f"[BananaSign] 用户 {user_id} 余额不足，跳过扣费")
 
-            # ========== 画图成功，增加每日生成计数 ==========
-            if self.max_daily_draws > 0:
+            # ========== 画图成功，增加每日生成计数（管理员跳过）==========
+            if self.max_daily_draws > 0 and not is_admin:
                 user_id = str(event.get_sender_id())
                 user = self._get_user(user_id)
                 today = date.today().isoformat()
@@ -1122,7 +1126,7 @@ class BananaSign(Star):
         return None, err
 
     def build_message_chain(
-        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int = None, elapsed_time: str = None
+        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int | str = None, elapsed_time: str = None
     ) -> list[BaseMessageComponent]:
         """构建消息链"""
         msg_chain: list[BaseMessageComponent] = [

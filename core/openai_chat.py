@@ -1,5 +1,6 @@
 import json
 import re
+from urllib.parse import urlparse
 
 from curl_cffi.requests.exceptions import Timeout
 
@@ -7,6 +8,34 @@ from astrbot.api import logger
 
 from .base import BaseProvider
 from .data import ProviderConfig
+
+
+def is_safe_url(url: str) -> bool:
+    """检查 URL 是否安全（防止 SSRF）"""
+    try:
+        parsed = urlparse(url)
+        # 只允许 https 协议
+        if parsed.scheme != "https":
+            logger.warning(f"[BIG BANANA] URL 不安全（非 https）: {url[:100]}")
+            return False
+        # 禁止访问内网地址
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # 禁止 localhost 和私有 IP 段
+        if hostname.lower() in ["localhost", "127.0.0.1", "::1"]:
+            return False
+        # 简单的私有IP检测（10.x, 172.16-31.x, 192.168.x）
+        if hostname.startswith(("10.", "192.168.")):
+            return False
+        if hostname.startswith("172."):
+            parts = hostname.split(".")
+            if len(parts) >= 2 and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+                return False
+        return True
+    except Exception as e:
+        logger.warning(f"[BIG BANANA] URL 解析失败: {url[:100]}, {e}")
+        return False
 
 
 class OpenAIChatProvider(BaseProvider):
@@ -66,8 +95,10 @@ class OpenAIChatProvider(BaseProvider):
                                     header, base64_data = url.split(",", 1)
                                     mime = header.split(";")[0].replace("data:", "")
                                     b64_images.append((mime, base64_data))
-                                elif url:
+                                elif url and is_safe_url(url):
                                     images_url.append(url)
+                                else:
+                                    logger.warning(f"[BIG BANANA] 跳过不安全的 URL: {url[:100]}")
 
                         # 处理 content 可能是列表的情况（OpenAI Vision API 格式）
                         if isinstance(content, list):
@@ -103,8 +134,10 @@ class OpenAIChatProvider(BaseProvider):
                                     header, base64_data = img_src.split(",", 1)
                                     mime = header.split(";")[0].replace("data:", "")
                                     b64_images.append((mime, base64_data))
-                                else:  # URL
+                                elif is_safe_url(img_src):  # URL - 需要安全检查
                                     images_url.append(img_src)
+                                else:
+                                    logger.warning(f"[BIG BANANA] 跳过 markdown 中不安全的 URL: {img_src[:100]}")
                     else:
                         logger.warning(
                             f"[BIG BANANA] 图片生成失败, 响应内容: {response.text[:1024]}"

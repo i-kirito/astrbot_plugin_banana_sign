@@ -134,6 +134,9 @@ class BananaSign(Star):
         # 正在运行的任务映射
         self.running_tasks: dict[str, asyncio.Task] = {}
 
+        # 用户资源锁（防止并发扣费）
+        self.user_locks: dict[str, asyncio.Lock] = {}
+
         logger.info(f"[BananaSign] 插件已加载，用户数: {len(self.user_data.get('users', {}))}")
 
     # ========== 积分系统方法 ==========
@@ -348,6 +351,12 @@ class BananaSign(Star):
         # 统一转为字符串比较，避免类型不匹配
         return sender_id in [str(aid) for aid in admin_ids]
 
+    def _get_user_lock(self, user_id: str) -> asyncio.Lock:
+        """获取用户专属锁（用于并发保护）"""
+        if user_id not in self.user_locks:
+            self.user_locks[user_id] = asyncio.Lock()
+        return self.user_locks[user_id]
+
     # === 管理指令：白名单管理 ===
     @filter.command("lm白名单添加", alias={"lmawl"})
     async def add_whitelist_command(
@@ -380,6 +389,7 @@ class BananaSign(Star):
             yield event.plain_result(f"⚠️ {target_id} 已在名单列表中。")
             return
 
+        self.conf.save_config()
         yield event.plain_result(f"✅ 已添加{msg_type}白名单：{target_id}")
 
     @filter.command("lm白名单删除", alias={"lmdwl"})
@@ -712,48 +722,64 @@ class BananaSign(Star):
         if cmd not in self.prompt_dict:
             return
 
-        # ========== 积分检查（管理员跳过）==========
+        # ========== 积分检查与预扣（管理员跳过，使用锁保护）==========
         is_admin = self.is_global_admin(event)
         logger.debug(f"[BananaSign] 用户 {event.get_sender_id()} 管理员状态: {is_admin}")
-        if self.consume_enabled and not is_admin:
-            user_id = str(event.get_sender_id())
-            user = self._get_user(user_id)
-            if user["bananas"] < self.cost_per_draw:
-                yield event.plain_result(
-                    f"🍌 香蕉不足！\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"当前余额: {user['bananas']} 香蕉\n"
-                    f"画图需要: {self.cost_per_draw} 香蕉\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"💡 使用 /签到 获取香蕉"
-                )
-                return
 
-        # ========== 每日生成次数检查（管理员跳过）==========
-        if self.max_daily_draws > 0 and not is_admin:
+        # 非管理员需要预扣费和检查限制
+        if not is_admin:
             user_id = str(event.get_sender_id())
-            user = self._get_user(user_id)
-            today = date.today().isoformat()
-            # 如果是新的一天，重置计数
-            if user.get("last_draw_date") != today:
-                user["daily_draws"] = 0
-                user["last_draw_date"] = today
-            # 检查是否超过限制
-            if user["daily_draws"] >= self.max_daily_draws:
-                yield event.plain_result(
-                    f"🎨 今日生成次数已达上限！\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"今日已生成: {user['daily_draws']} 次\n"
-                    f"每日上限: {self.max_daily_draws} 次\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"💡 明天再来吧~"
-                )
-                return
+            # 获取用户专属锁
+            user_lock = self._get_user_lock(user_id)
+
+            async with user_lock:
+                user = self._get_user(user_id)
+                today = date.today().isoformat()
+
+                # 检查并重置每日计数
+                if user.get("last_draw_date") != today:
+                    user["daily_draws"] = 0
+                    user["last_draw_date"] = today
+
+                # 检查香蕉余额
+                if self.consume_enabled and user["bananas"] < self.cost_per_draw:
+                    yield event.plain_result(
+                        f"🍌 香蕉不足！\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"当前余额: {user['bananas']} 香蕉\n"
+                        f"画图需要: {self.cost_per_draw} 香蕉\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 使用 /签到 获取香蕉"
+                    )
+                    return
+
+                # 检查每日生成次数
+                if self.max_daily_draws > 0 and user["daily_draws"] >= self.max_daily_draws:
+                    yield event.plain_result(
+                        f"🎨 今日生成次数已达上限！\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"今日已生成: {user['daily_draws']} 次\n"
+                        f"每日上限: {self.max_daily_draws} 次\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 明天再来吧~"
+                    )
+                    return
+
+                # 预扣费用和计数（失败时需要回滚）
+                if self.consume_enabled:
+                    user["bananas"] -= self.cost_per_draw
+                    user["total_used"] += self.cost_per_draw
+                if self.max_daily_draws > 0:
+                    user["daily_draws"] += 1
+                self._save_sign_data()
+                logger.info(f"[BananaSign] 用户 {user_id} 预扣 {self.cost_per_draw} 香蕉，今日次数 {user['daily_draws']}/{self.max_daily_draws}")
+        else:
+            user_id = None  # 管理员不需要用户ID
 
         # 群白名单判断
         if (
             self.group_whitelist_enabled
-            and event.unified_msg_origin not in self.group_whitelist
+            and str(event.unified_msg_origin) not in [str(gid) for gid in self.group_whitelist]
         ):
             logger.info(f"群 {event.unified_msg_origin} 不在白名单内，跳过处理")
             return
@@ -761,7 +787,7 @@ class BananaSign(Star):
         # 用户白名单判断
         if (
             self.user_whitelist_enabled
-            and event.get_sender_id() not in self.user_whitelist
+            and str(event.get_sender_id()) not in [str(uid) for uid in self.user_whitelist]
         ):
             logger.info(f"用户 {event.get_sender_id()} 不在白名单内，跳过处理")
             return
@@ -877,6 +903,19 @@ class BananaSign(Star):
         try:
             results, err_msg = await task
             if not results or err_msg:
+                # 生成失败，回滚预扣的积分和次数（管理员跳过）
+                if not is_admin and user_id:
+                    user_lock = self._get_user_lock(user_id)
+                    async with user_lock:
+                        user = self._get_user(user_id)
+                        if self.consume_enabled:
+                            user["bananas"] += self.cost_per_draw
+                            user["total_used"] -= self.cost_per_draw
+                        if self.max_daily_draws > 0:
+                            user["daily_draws"] -= 1
+                        self._save_sign_data()
+                        logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
+
                 yield event.chain_result(
                     [
                         Comp.Reply(id=event.message_obj.message_id),
@@ -896,31 +935,7 @@ class BananaSign(Star):
                 remaining = None
             msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
 
-            # ========== 画图成功，消耗积分（管理员跳过）==========
-            if self.consume_enabled and not is_admin:
-                user_id = str(event.get_sender_id())
-                user = self._get_user(user_id)
-                # 再次检查余额，防止竞态条件
-                if user["bananas"] >= self.cost_per_draw:
-                    user["bananas"] -= self.cost_per_draw
-                    user["total_used"] += self.cost_per_draw
-                    self._save_sign_data()
-                    logger.info(f"[BananaSign] 用户 {user_id} 消耗 {self.cost_per_draw} 香蕉画图，剩余 {user['bananas']}")
-                else:
-                    logger.warning(f"[BananaSign] 用户 {user_id} 余额不足，跳过扣费")
-
-            # ========== 画图成功，增加每日生成计数（管理员跳过）==========
-            if self.max_daily_draws > 0 and not is_admin:
-                user_id = str(event.get_sender_id())
-                user = self._get_user(user_id)
-                today = date.today().isoformat()
-                if user.get("last_draw_date") != today:
-                    user["daily_draws"] = 0
-                    user["last_draw_date"] = today
-                user["daily_draws"] += 1
-                self._save_sign_data()
-                logger.info(f"[BananaSign] 用户 {user_id} 今日生成次数: {user['daily_draws']}/{self.max_daily_draws}")
-
+            # 画图成功，积分已在之前预扣，无需再次处理
             yield event.chain_result(msg_chain)
         except asyncio.CancelledError:
             logger.info(f"{task_id} 任务被取消")

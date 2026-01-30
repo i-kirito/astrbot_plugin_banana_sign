@@ -1309,6 +1309,9 @@ class BananaSign(Star):
             yield event.plain_result("暂无签到记录")
             return
 
+        # 获取管理员列表
+        admin_ids = [str(aid) for aid in self.context.get_config().get("admins_id", [])]
+
         sorted_users = sorted(
             users.items(),
             key=lambda x: x[1].get("bananas", 0),
@@ -1329,7 +1332,8 @@ class BananaSign(Star):
         for i, (uid, data) in enumerate(sorted_users):
             medal = medals[i] if i < 3 else f"{i+1}."
             display_id = f"{uid[:4]}***{uid[-2:]}" if len(uid) > 6 else uid
-            bananas = data.get('bananas', 0)
+            # 管理员显示 ∞
+            bananas = "∞" if str(uid) in admin_ids else data.get('bananas', 0)
             total_signs = data.get('total_signs', 0)
             streak = data.get('streak', 0)
 

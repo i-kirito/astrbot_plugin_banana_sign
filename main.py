@@ -1286,10 +1286,14 @@ class BananaSign(Star):
         user_id = str(event.get_sender_id())
         user = self._get_user(user_id)
 
+        # 管理员显示 ∞
+        is_admin = self.is_global_admin(event)
+        balance_display = "∞" if is_admin else user['bananas']
+
         yield event.plain_result(
             f"🍌 我的香蕉账户\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"当前余额: {user['bananas']} 香蕉\n"
+            f"当前余额: {balance_display} 香蕉\n"
             f"已使用: {user.get('total_used', 0)} 次\n"
             f"连续签到: {user['streak']} 天\n"
             f"累计签到: {user['total_signs']} 次\n"

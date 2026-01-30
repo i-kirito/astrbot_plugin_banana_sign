@@ -1269,11 +1269,15 @@ class BananaSign(Star):
         if lucky_reward > 0:
             lucky_msg = f"\n⭐ 幸运星降临！随机 +{lucky_reward} 香蕉！"
 
+        # 管理员显示 ∞
+        is_admin = self.is_global_admin(event)
+        balance_display = "∞" if is_admin else user['bananas']
+
         yield event.plain_result(
             f"🍌 签到成功！\n"
             f"━━━━━━━━━━━━━━━\n"
             f"获得: +{reward} 香蕉{bonus_msg}{lucky_msg}\n"
-            f"当前余额: {user['bananas']} 香蕉\n"
+            f"当前余额: {balance_display} 香蕉\n"
             f"连续签到: {user['streak']} 天\n"
             f"累计签到: {user['total_signs']} 次\n"
             f"━━━━━━━━━━━━━━━\n"

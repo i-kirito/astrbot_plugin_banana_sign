@@ -1181,6 +1181,10 @@ class BananaSign(Star):
 
         # 已签到情况
         if last_sign == today:
+            # 管理员显示 ∞
+            is_admin = self.is_global_admin(event)
+            balance_display = "∞" if is_admin else user["bananas"]
+
             # 尝试使用卡片渲染
             if self.sign_card_renderer:
                 try:
@@ -1189,7 +1193,7 @@ class BananaSign(Star):
                         daily_reward=self.daily_reward,
                         streak_bonus=0,
                         lucky_reward=0,
-                        total_bananas=user["bananas"],
+                        total_bananas=balance_display,
                         total_signs=user["total_signs"],
                         streak=user["streak"],
                         already_signed=True,
@@ -1203,7 +1207,7 @@ class BananaSign(Star):
             yield event.plain_result(
                 f"🍌 今天已经签到过了~\n"
                 f"━━━━━━━━━━━━━━━\n"
-                f"当前余额: {user['bananas']} 香蕉\n"
+                f"当前余额: {balance_display} 香蕉\n"
                 f"连续签到: {user['streak']} 天\n"
                 f"━━━━━━━━━━━━━━━\n"
                 f"💡 香蕉可用于画图功能"
@@ -1243,6 +1247,10 @@ class BananaSign(Star):
         user["last_sign"] = today
         self._save_sign_data()
 
+        # 管理员显示 ∞
+        is_admin = self.is_global_admin(event)
+        balance_display = "∞" if is_admin else user["bananas"]
+
         # 尝试使用卡片渲染
         if self.sign_card_renderer:
             try:
@@ -1251,7 +1259,7 @@ class BananaSign(Star):
                     daily_reward=self.daily_reward,
                     streak_bonus=streak_bonus_reward,
                     lucky_reward=lucky_reward,
-                    total_bananas=user["bananas"],
+                    total_bananas=balance_display,
                     total_signs=user["total_signs"],
                     streak=user["streak"],
                     already_signed=False,
@@ -1268,10 +1276,6 @@ class BananaSign(Star):
             bonus_msg = f"\n🎁 连续 {user['streak']} 天，额外 +{streak_bonus_reward} 香蕉！"
         if lucky_reward > 0:
             lucky_msg = f"\n⭐ 幸运星降临！随机 +{lucky_reward} 香蕉！"
-
-        # 管理员显示 ∞
-        is_admin = self.is_global_admin(event)
-        balance_display = "∞" if is_admin else user['bananas']
 
         yield event.plain_result(
             f"🍌 签到成功！\n"

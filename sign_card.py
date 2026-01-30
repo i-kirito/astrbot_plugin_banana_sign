@@ -131,7 +131,7 @@ class SignCardRenderer:
         daily_reward: int,
         streak_bonus: int,
         lucky_reward: int,
-        total_bananas: int,
+        total_bananas: int | str,
         total_signs: int,
         streak: int,
         already_signed: bool = False,

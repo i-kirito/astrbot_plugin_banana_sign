@@ -50,7 +50,25 @@ class OpenAIChatProvider(BaseProvider):
                     # 检查 finish_reason 状态
                     finish_reason = item.get("finish_reason", "")
                     if finish_reason == "stop":
-                        content = item.get("message", {}).get("content", "")
+                        message = item.get("message", {})
+                        content = message.get("content", "")
+
+                        # 处理 message.images 字段（Gemini 图片生成格式）
+                        images_list = message.get("images", [])
+                        for img_item in images_list:
+                            if isinstance(img_item, dict) and img_item.get("type") == "image_url":
+                                img_url = img_item.get("image_url", {})
+                                if isinstance(img_url, dict):
+                                    url = img_url.get("url", "")
+                                else:
+                                    url = str(img_url)
+                                if url.startswith("data:image/"):
+                                    header, base64_data = url.split(",", 1)
+                                    mime = header.split(";")[0].replace("data:", "")
+                                    b64_images.append((mime, base64_data))
+                                elif url:
+                                    images_url.append(url)
+
                         # 处理 content 可能是列表的情况（OpenAI Vision API 格式）
                         if isinstance(content, list):
                             # 从列表中提取文本或图片URL
@@ -75,15 +93,18 @@ class OpenAIChatProvider(BaseProvider):
                                 content = ""  # 如果没有找到文本，设为空字符串
                         elif not isinstance(content, str):
                             content = str(content) if content else ""
-                        match = re.search(r"!\[.*?\]\((.*?)\)", content)
-                        if match:
-                            img_src = match.group(1)
-                            if img_src.startswith("data:image/"):  # base64
-                                header, base64_data = img_src.split(",", 1)
-                                mime = header.split(";")[0].replace("data:", "")
-                                b64_images.append((mime, base64_data))
-                            else:  # URL
-                                images_url.append(img_src)
+
+                        # 从 markdown 格式的 content 中提取图片
+                        if content:
+                            match = re.search(r"!\[.*?\]\((.*?)\)", content)
+                            if match:
+                                img_src = match.group(1)
+                                if img_src.startswith("data:image/"):  # base64
+                                    header, base64_data = img_src.split(",", 1)
+                                    mime = header.split(";")[0].replace("data:", "")
+                                    b64_images.append((mime, base64_data))
+                                else:  # URL
+                                    images_url.append(img_src)
                     else:
                         logger.warning(
                             f"[BIG BANANA] 图片生成失败, 响应内容: {response.text[:1024]}"
@@ -168,7 +189,25 @@ class OpenAIChatProvider(BaseProvider):
                             json_data = json.loads(line_data)
                             # 遍历 json_data，检查是否有图片
                             for item in json_data.get("choices", []):
-                                content = item.get("delta", {}).get("content", "")
+                                delta = item.get("delta", {})
+                                content = delta.get("content", "")
+
+                                # 处理 delta.images 字段（Gemini 图片生成格式）
+                                images_list = delta.get("images", [])
+                                for img_item in images_list:
+                                    if isinstance(img_item, dict) and img_item.get("type") == "image_url":
+                                        img_url = img_item.get("image_url", {})
+                                        if isinstance(img_url, dict):
+                                            url = img_url.get("url", "")
+                                        else:
+                                            url = str(img_url)
+                                        if url.startswith("data:image/"):
+                                            header, base64_data = url.split(",", 1)
+                                            mime = header.split(";")[0].replace("data:", "")
+                                            b64_images.append((mime, base64_data))
+                                        elif url:
+                                            images_url.append(url)
+
                                 # 处理 content 可能是列表的情况
                                 if isinstance(content, list):
                                     for part in content:
@@ -192,19 +231,22 @@ class OpenAIChatProvider(BaseProvider):
                                         content = ""
                                 elif not isinstance(content, str):
                                     content = str(content) if content else ""
-                                match = re.search(r"!\[.*?\]\((.*?)\)", content)
-                                if match:
-                                    img_src = match.group(1)
-                                    if img_src.startswith("data:image/"):  # base64
-                                        header, base64_data = img_src.split(",", 1)
-                                        mime = header.split(";")[0].replace("data:", "")
-                                        b64_images.append((mime, base64_data))
-                                    else:  # URL
-                                        images_url.append(img_src)
-                                else:  # 尝试查找失败的原因或者纯文本返回结果
-                                    reasoning_content += item.get("delta", {}).get(
-                                        "reasoning_content", ""
-                                    )
+
+                                # 从 markdown 格式提取图片
+                                if content:
+                                    match = re.search(r"!\[.*?\]\((.*?)\)", content)
+                                    if match:
+                                        img_src = match.group(1)
+                                        if img_src.startswith("data:image/"):  # base64
+                                            header, base64_data = img_src.split(",", 1)
+                                            mime = header.split(";")[0].replace("data:", "")
+                                            b64_images.append((mime, base64_data))
+                                        else:  # URL
+                                            images_url.append(img_src)
+                                    else:  # 尝试查找失败的原因或者纯文本返回结果
+                                        reasoning_content += delta.get(
+                                            "reasoning_content", ""
+                                        )
                         except json.JSONDecodeError:
                             continue
                 if not images_url and not b64_images:

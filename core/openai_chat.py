@@ -51,6 +51,30 @@ class OpenAIChatProvider(BaseProvider):
                     finish_reason = item.get("finish_reason", "")
                     if finish_reason == "stop":
                         content = item.get("message", {}).get("content", "")
+                        # 处理 content 可能是列表的情况（OpenAI Vision API 格式）
+                        if isinstance(content, list):
+                            # 从列表中提取文本或图片URL
+                            for part in content:
+                                if isinstance(part, dict):
+                                    if part.get("type") == "text":
+                                        content = part.get("text", "")
+                                        break
+                                    elif part.get("type") == "image_url":
+                                        img_url = part.get("image_url", {})
+                                        if isinstance(img_url, dict):
+                                            url = img_url.get("url", "")
+                                        else:
+                                            url = str(img_url)
+                                        if url.startswith("data:image/"):
+                                            header, base64_data = url.split(",", 1)
+                                            mime = header.split(";")[0].replace("data:", "")
+                                            b64_images.append((mime, base64_data))
+                                        elif url:
+                                            images_url.append(url)
+                            else:
+                                content = ""  # 如果没有找到文本，设为空字符串
+                        elif not isinstance(content, str):
+                            content = str(content) if content else ""
                         match = re.search(r"!\[.*?\]\((.*?)\)", content)
                         if match:
                             img_src = match.group(1)
@@ -145,6 +169,29 @@ class OpenAIChatProvider(BaseProvider):
                             # 遍历 json_data，检查是否有图片
                             for item in json_data.get("choices", []):
                                 content = item.get("delta", {}).get("content", "")
+                                # 处理 content 可能是列表的情况
+                                if isinstance(content, list):
+                                    for part in content:
+                                        if isinstance(part, dict):
+                                            if part.get("type") == "text":
+                                                content = part.get("text", "")
+                                                break
+                                            elif part.get("type") == "image_url":
+                                                img_url = part.get("image_url", {})
+                                                if isinstance(img_url, dict):
+                                                    url = img_url.get("url", "")
+                                                else:
+                                                    url = str(img_url)
+                                                if url.startswith("data:image/"):
+                                                    header, base64_data = url.split(",", 1)
+                                                    mime = header.split(";")[0].replace("data:", "")
+                                                    b64_images.append((mime, base64_data))
+                                                elif url:
+                                                    images_url.append(url)
+                                    else:
+                                        content = ""
+                                elif not isinstance(content, str):
+                                    content = str(content) if content else ""
                                 match = re.search(r"!\[.*?\]\((.*?)\)", content)
                                 if match:
                                     img_src = match.group(1)

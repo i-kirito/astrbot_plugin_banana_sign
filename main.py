@@ -948,10 +948,12 @@ class BananaSign(Star):
                             self._save_sign_data()
                             logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
 
+                    # 处理错误消息显示
+                    display_err = err_msg or "图片触碰内容审查，无法生成"
                     yield event.chain_result(
                         [
                             Comp.Reply(id=event.message_obj.message_id),
-                            Comp.Plain(f"❌ 图片生成失败：{err_msg}"),
+                            Comp.Plain(f"❌ {display_err}"),
                         ]
                     )
                     return

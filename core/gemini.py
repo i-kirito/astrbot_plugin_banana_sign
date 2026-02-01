@@ -71,17 +71,17 @@ class GeminiProvider(BaseProvider):
                         return (
                             None,
                             200,
-                            f"请求被内容安全系统拦截，原因：{result.get('promptFeedback', {}).get('blockReason', '未获取到原因')}",
+                            f"图片触碰内容审查，无法生成（原因：{result.get('promptFeedback', {}).get('blockReason', '未知')}）",
                         )
                     # 检查 finishMessage 错误信息（Gemini 3 新字段）
                     for item in result.get("candidates", []):
                         finish_msg = item.get("finishMessage", "")
                         if finish_msg:
                             # 提取简短的错误描述
-                            if "violated" in finish_msg.lower():
-                                return None, 200, "图片被 Google 内容安全策略拦截，请修改提示词后重试"
+                            if "violated" in finish_msg.lower() or "policy" in finish_msg.lower():
+                                return None, 200, "图片触碰内容审查，无法生成"
                             return None, 200, f"生成失败: {finish_msg[:100]}"
-                    return None, 200, "响应中未包含图片数据"
+                    return None, 200, "图片触碰内容审查，无法生成"
                 return b64_images, 200, None
             else:
                 logger.error(
@@ -163,7 +163,7 @@ class GeminiProvider(BaseProvider):
                     logger.warning(
                         f"[BIG BANANA] 请求成功，但未返回图片数据, 响应内容: {result[:1024]}"
                     )
-                    return None, 200, "响应中未包含图片数据"
+                    return None, 200, "图片触碰内容审查，无法生成"
                 return b64_images, 200, None
             else:
                 logger.error(

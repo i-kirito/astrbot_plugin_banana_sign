@@ -148,7 +148,8 @@ class OpenAIChatProvider(BaseProvider):
                     logger.warning(
                         f"[BIG BANANA] 请求成功，但未返回图片数据, 响应内容: {response.text[:1024]}"
                     )
-                    return None, 200, "响应中未包含图片数据"
+                    # 空内容通常表示内容审查拦截
+                    return None, 200, "图片触碰内容审查，无法生成"
                 # 下载图片并转换为 base64
                 b64_images += await self.downloader.fetch_images(images_url)
                 if not b64_images:
@@ -286,7 +287,7 @@ class OpenAIChatProvider(BaseProvider):
                     logger.warning(
                         f"[BIG BANANA] 请求成功，但未返回图片数据, 响应内容: {result[:1024]}"
                     )
-                    return None, 200, reasoning_content or "响应中未包含图片数据"
+                    return None, 200, reasoning_content or "图片触碰内容审查，无法生成"
                 # 下载图片并转换为 base64（有时会出现连接被重置的错误，不知道什么原因，国外服务器也一样）
                 b64_images += await self.downloader.fetch_images(images_url)
                 if not b64_images:

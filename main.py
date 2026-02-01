@@ -1135,9 +1135,10 @@ class BananaSign(Star):
 
         # 发送绘图中提示（引用原消息）
         await event.send(
-            MessageChain()
-            .reply(event.message_obj.message_id)
-            .message("🎨 在画了，请稍等一会...")
+            MessageChain([
+                Comp.Reply(id=event.message_obj.message_id),
+                Comp.Plain("🎨 在画了，请稍等一会...")
+            ])
         )
 
         # 调度提供商生成图片

@@ -919,11 +919,10 @@ class BananaSign(Star):
 
         # 获取信号量（等待轮到自己）
         async with self._semaphore:
-            # 如果之前排队了，现在轮到了
+            # 如果之前排队了，现在轮到了，更新等待计数
             if queue_position > 0:
                 async with self._queue_lock:
                     self._queue_waiting -= 1
-                yield event.plain_result("🎨 轮到您了，开始生成...")
 
             # 记录开始时间
             start_time = datetime.now()

@@ -1133,8 +1133,12 @@ class BananaSign(Star):
                 f"参考图片数量超过最大允许数量 {max_allowed_images}，跳过下载图片步骤"
             )
 
-        # 发送绘图中提示
-        await event.send(MessageChain().message("🎨 在画了，请稍等一会..."))
+        # 发送绘图中提示（引用原消息）
+        await event.send(
+            MessageChain()
+            .reply(event.message_obj.message_id)
+            .message("🎨 在画了，请稍等一会...")
+        )
 
         # 调度提供商生成图片
         images_result, err = await self._dispatch(

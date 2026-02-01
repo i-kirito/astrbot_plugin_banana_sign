@@ -81,6 +81,16 @@ class BananaSign(Star):
             self.lucky_max = 0
         # 单人每日最大生成数（0 表示不限制）
         self.max_daily_draws = sign_config.get("max_daily_draws", 0)
+        # 最大并发生成数
+        self.max_concurrent = sign_config.get("max_concurrent", 3)
+
+        # ========== 队列系统初始化 ==========
+        # 并发控制信号量
+        self._semaphore: asyncio.Semaphore | None = None
+        # 当前队列中等待的任务数
+        self._queue_waiting = 0
+        # 队列锁
+        self._queue_lock = asyncio.Lock()
 
         # ========== 画图功能初始化 ==========
         # 初始化常规配置和图片生成配置
@@ -197,6 +207,10 @@ class BananaSign(Star):
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
+        # 初始化并发控制信号量
+        self._semaphore = asyncio.Semaphore(self.max_concurrent)
+        logger.info(f"[BananaSign] 队列系统已初始化，最大并发数: {self.max_concurrent}")
+
         # 初始化文件目录
         os.makedirs(self.refer_images_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
@@ -893,17 +907,74 @@ class BananaSign(Star):
         logger.debug(
             f"生成图片应用参数: { {k: v for k, v in params.items() if k != 'prompt'} }"
         )
-        # 记录开始时间
-        start_time = datetime.now()
-        # 调用作图任务
-        task = asyncio.create_task(self.job(event, params, image_urls=image_urls))
-        task_id = event.message_obj.message_id
-        self.running_tasks[task_id] = task
 
-        try:
-            results, err_msg = await task
-            if not results or err_msg:
-                # 生成失败，回滚预扣的积分和次数（管理员跳过）
+        # ========== 排队逻辑 ==========
+        # 检查是否需要排队
+        queue_position = 0
+        if self._semaphore and self._semaphore.locked():
+            async with self._queue_lock:
+                self._queue_waiting += 1
+                queue_position = self._queue_waiting
+            yield event.plain_result(f"🎨 当前有其他任务正在生成，您的请求已加入队列（第 {queue_position} 位）...")
+
+        # 获取信号量（等待轮到自己）
+        async with self._semaphore:
+            # 如果之前排队了，现在轮到了
+            if queue_position > 0:
+                async with self._queue_lock:
+                    self._queue_waiting -= 1
+                yield event.plain_result("🎨 轮到您了，开始生成...")
+
+            # 记录开始时间
+            start_time = datetime.now()
+            # 调用作图任务
+            task = asyncio.create_task(self.job(event, params, image_urls=image_urls))
+            task_id = event.message_obj.message_id
+            self.running_tasks[task_id] = task
+
+            try:
+                results, err_msg = await task
+                if not results or err_msg:
+                    # 生成失败，回滚预扣的积分和次数（管理员跳过）
+                    if not is_admin and user_id:
+                        user_lock = self._get_user_lock(user_id)
+                        async with user_lock:
+                            user = self._get_user(user_id)
+                            if self.consume_enabled:
+                                user["bananas"] += self.cost_per_draw
+                                user["total_used"] -= self.cost_per_draw
+                            if self.max_daily_draws > 0:
+                                user["daily_draws"] -= 1
+                            self._save_sign_data()
+                            logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
+
+                    yield event.chain_result(
+                        [
+                            Comp.Reply(id=event.message_obj.message_id),
+                            Comp.Plain(f"❌ 图片生成失败：{err_msg}"),
+                        ]
+                    )
+                    return
+
+                # 计算耗时
+                elapsed = datetime.now() - start_time
+                elapsed_str = f"{int(elapsed.total_seconds() // 60):02d}:{int(elapsed.total_seconds() % 60):02d}"
+
+                # 组装消息链（管理员显示 ∞）
+                if self.consume_enabled:
+                    remaining = "∞" if is_admin else self._get_user(str(event.get_sender_id()))["bananas"]
+                else:
+                    remaining = None
+                msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
+
+                # 画图成功，积分已在之前预扣，无需再次处理
+                yield event.chain_result(msg_chain)
+            except asyncio.CancelledError:
+                logger.info(f"{task_id} 任务被取消")
+                return
+            except Exception as e:
+                # 捕获所有异常，确保回滚预扣
+                logger.error(f"[BananaSign] 任务执行异常: {e}", exc_info=True)
                 if not is_admin and user_id:
                     user_lock = self._get_user_lock(user_id)
                     async with user_lock:
@@ -914,57 +985,18 @@ class BananaSign(Star):
                         if self.max_daily_draws > 0:
                             user["daily_draws"] -= 1
                         self._save_sign_data()
-                        logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
-
+                        logger.warning(f"[BananaSign] 用户 {user_id} 任务异常，已回滚预扣")
                 yield event.chain_result(
                     [
                         Comp.Reply(id=event.message_obj.message_id),
-                        Comp.Plain(f"❌ 图片生成失败：{err_msg}"),
+                        Comp.Plain("❌ 图片生成时发生内部错误"),
                     ]
                 )
-                return
-
-            # 计算耗时
-            elapsed = datetime.now() - start_time
-            elapsed_str = f"{int(elapsed.total_seconds() // 60):02d}:{int(elapsed.total_seconds() % 60):02d}"
-
-            # 组装消息链（管理员显示 ∞）
-            if self.consume_enabled:
-                remaining = "∞" if is_admin else self._get_user(str(event.get_sender_id()))["bananas"]
-            else:
-                remaining = None
-            msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
-
-            # 画图成功，积分已在之前预扣，无需再次处理
-            yield event.chain_result(msg_chain)
-        except asyncio.CancelledError:
-            logger.info(f"{task_id} 任务被取消")
-            return
-        except Exception as e:
-            # 捕获所有异常，确保回滚预扣
-            logger.error(f"[BananaSign] 任务执行异常: {e}", exc_info=True)
-            if not is_admin and user_id:
-                user_lock = self._get_user_lock(user_id)
-                async with user_lock:
-                    user = self._get_user(user_id)
-                    if self.consume_enabled:
-                        user["bananas"] += self.cost_per_draw
-                        user["total_used"] -= self.cost_per_draw
-                    if self.max_daily_draws > 0:
-                        user["daily_draws"] -= 1
-                    self._save_sign_data()
-                    logger.warning(f"[BananaSign] 用户 {user_id} 任务异常，已回滚预扣")
-            yield event.chain_result(
-                [
-                    Comp.Reply(id=event.message_obj.message_id),
-                    Comp.Plain("❌ 图片生成时发生内部错误"),
-                ]
-            )
-        finally:
-            self.running_tasks.pop(task_id, None)
-            # 目前只有 telegram 平台需要清理缓存
-            if event.platform_meta.name == "telegram":
-                clear_cache(self.temp_dir)
+            finally:
+                self.running_tasks.pop(task_id, None)
+                # 目前只有 telegram 平台需要清理缓存
+                if event.platform_meta.name == "telegram":
+                    clear_cache(self.temp_dir)
 
     async def job(
         self,
@@ -1460,6 +1492,7 @@ class BananaSign(Star):
             f"  /签到       每日签到获取香蕉\n"
             f"  /香蕉余额    查看当前积分\n"
             f"  /签到排行    查看排行榜\n"
+            f"  /画图队列    查看当前队列状态\n"
             f"\n"
             f"【积分规则】\n"
             f"  每日签到: +{self.daily_reward} 香蕉\n"
@@ -1467,5 +1500,21 @@ class BananaSign(Star):
             f"\n"
             f"【消耗规则】\n"
             f"  画图消耗: {self.cost_per_draw} 香蕉/次\n"
+            f"━━━━━━━━━━━━━━━"
+        )
+
+    @filter.command("画图队列", alias={"队列状态", "lmqueue"})
+    async def queue_status(self, event: AstrMessageEvent):
+        """查看画图队列状态"""
+        running_count = len(self.running_tasks)
+        waiting_count = self._queue_waiting if hasattr(self, '_queue_waiting') else 0
+        max_concurrent = self.max_concurrent if hasattr(self, 'max_concurrent') else 3
+
+        yield event.plain_result(
+            f"🎨 画图队列状态\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"最大并发数: {max_concurrent}\n"
+            f"正在生成: {running_count} 个任务\n"
+            f"排队等待: {waiting_count} 个任务\n"
             f"━━━━━━━━━━━━━━━"
         )

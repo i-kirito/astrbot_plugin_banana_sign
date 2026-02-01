@@ -49,28 +49,38 @@ class GeminiProvider(BaseProvider):
                 for item in result.get("candidates", []):
                     # 检查 finishReason 状态
                     finishReason = item.get("finishReason", "")
-                    if finishReason == "STOP":
-                        parts = item.get("content", {}).get("parts", [])
-                        for part in parts:
-                            if "inlineData" in part and "data" in part["inlineData"]:
-                                data = part["inlineData"]
-                                b64_images.append((data["mimeType"], data["data"]))
-                    else:
+                    parts = item.get("content", {}).get("parts", [])
+                    # 如果有明确的失败原因（非 STOP 且非空）
+                    if finishReason and finishReason != "STOP":
                         logger.warning(
                             f"[BIG BANANA] 图片生成失败, 响应内容: {response.text[:1024]}"
                         )
                         return None, 200, f"图片生成失败，原因: {finishReason}"
+                    # 提取图片数据
+                    for part in parts:
+                        if "inlineData" in part and "data" in part["inlineData"]:
+                            data = part["inlineData"]
+                            b64_images.append((data["mimeType"], data["data"]))
                 # 最后再检查是否有图片数据
                 if not b64_images:
                     logger.warning(
                         f"[BIG BANANA] 请求成功，但未返回图片数据, 响应内容: {response.text[:1024]}"
                     )
+                    # 检查 promptFeedback 拦截信息
                     if result.get("promptFeedback", {}):
                         return (
                             None,
                             200,
                             f"请求被内容安全系统拦截，原因：{result.get('promptFeedback', {}).get('blockReason', '未获取到原因')}",
                         )
+                    # 检查 finishMessage 错误信息（Gemini 3 新字段）
+                    for item in result.get("candidates", []):
+                        finish_msg = item.get("finishMessage", "")
+                        if finish_msg:
+                            # 提取简短的错误描述
+                            if "violated" in finish_msg.lower():
+                                return None, 200, "图片被 Google 内容安全策略拦截，请修改提示词后重试"
+                            return None, 200, f"生成失败: {finish_msg[:100]}"
                     return None, 200, "响应中未包含图片数据"
                 return b64_images, 200, None
             else:

@@ -45,6 +45,12 @@
                 "type": "int",
                 "default": 0,
                 "hint": "每人每天最多生成图片次数，设为 0 表示不限制"
+            },
+            "max_concurrent": {
+                "description": "最大并发生成数",
+                "type": "int",
+                "default": 3,
+                "hint": "同时允许多少个图片生成任务并行执行，超出的请求会排队等待"
             }
         }
     },

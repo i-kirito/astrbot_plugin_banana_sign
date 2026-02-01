@@ -33,6 +33,7 @@ def is_safe_url(url: str) -> bool:
         # 可信域名白名单（跳过 IP 检查）
         trusted_domains = (
             ".qq.com",
+            ".qq.com.cn",
             ".qlogo.cn",
             ".gtimg.cn",
             ".qpic.cn",

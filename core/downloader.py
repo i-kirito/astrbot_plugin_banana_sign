@@ -1,5 +1,8 @@
 import base64
+import ipaddress
+import socket
 from io import BytesIO
+from urllib.parse import urlparse
 
 from curl_cffi import AsyncSession
 from curl_cffi.requests.exceptions import (
@@ -12,6 +15,38 @@ from PIL import Image
 from astrbot.api import logger
 
 from .data import SUPPORTED_FILE_FORMATS, CommonConfig
+
+
+def is_safe_url(url: str) -> bool:
+    """检查 URL 是否安全（防止 SSRF 攻击）"""
+    try:
+        parsed = urlparse(url)
+        # 只允许 http 和 https
+        if parsed.scheme not in ("http", "https"):
+            logger.warning(f"[BIG BANANA] 不安全的 URL scheme: {parsed.scheme}")
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # 解析域名获取 IP
+        try:
+            ip = socket.gethostbyname(hostname)
+            ip_obj = ipaddress.ip_address(ip)
+
+            # 拒绝私有/保留 IP
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved:
+                logger.warning(f"[BIG BANANA] URL 解析到私有/保留 IP: {ip}")
+                return False
+        except socket.gaierror:
+            # 域名解析失败，允许继续（可能是临时 DNS 问题）
+            pass
+
+        return True
+    except Exception as e:
+        logger.warning(f"[BIG BANANA] URL 安全检查失败: {e}")
+        return False
 
 
 class Downloader:
@@ -71,6 +106,11 @@ class Downloader:
             return None
 
     async def _download_image(self, url: str) -> tuple[str, str] | None:
+        # SSRF 防护：验证 URL 安全性
+        if not is_safe_url(url):
+            logger.warning(f"[BIG BANANA] 拒绝不安全的 URL: {url}")
+            return None
+
         try:
             response = await self.session.get(
                 url,

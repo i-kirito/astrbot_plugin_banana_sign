@@ -37,11 +37,31 @@ def save_images(image_result: list[tuple[str, str]], path_dir: Path) -> list[tup
     return saved_paths
 
 
-def read_file(path) -> tuple[str | None, str | None]:
+def read_file(path, allowed_dir=None) -> tuple[str | None, str | None]:
+    """读取文件并返回 (mime_type, base64_data)
+
+    Args:
+        path: 文件路径
+        allowed_dir: 允许的目录（用于路径穿越防护）
+    """
     try:
-        with open(path, "rb") as f:
+        # 路径穿越防护
+        resolved_path = Path(path).resolve()
+        if allowed_dir is not None:
+            allowed_resolved = Path(allowed_dir).resolve()
+            if not str(resolved_path).startswith(str(allowed_resolved)):
+                logger.warning(f"[BIG BANANA] 路径穿越尝试被阻止: {path}")
+                return None, None
+
+        # 检查文件名是否包含危险字符
+        filename = resolved_path.name
+        if ".." in filename or filename.startswith("/"):
+            logger.warning(f"[BIG BANANA] 不安全的文件名: {filename}")
+            return None, None
+
+        with open(resolved_path, "rb") as f:
             file_data = f.read()
-            mime_type, _ = mimetypes.guess_type(path)
+            mime_type, _ = mimetypes.guess_type(str(resolved_path))
             b64_data = base64.b64encode(file_data).decode("utf-8")
             return mime_type, b64_data
     except Exception as e:

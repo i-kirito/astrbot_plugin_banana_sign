@@ -348,8 +348,8 @@ class BananaSign(Star):
         """检查发送者是否为全局管理员"""
         admin_ids = self.context.get_config().get("admins_id", [])
         sender_id = str(event.get_sender_id())
-        # 统一转为字符串比较，避免类型不匹配
-        return sender_id in [str(aid) for aid in admin_ids]
+        # 统一转为字符串比较，过滤空值
+        return sender_id in [str(aid) for aid in admin_ids if aid]
 
     def _get_user_lock(self, user_id: str) -> asyncio.Lock:
         """获取用户专属锁（用于并发保护）"""
@@ -940,6 +940,26 @@ class BananaSign(Star):
         except asyncio.CancelledError:
             logger.info(f"{task_id} 任务被取消")
             return
+        except Exception as e:
+            # 捕获所有异常，确保回滚预扣
+            logger.error(f"[BananaSign] 任务执行异常: {e}", exc_info=True)
+            if not is_admin and user_id:
+                user_lock = self._get_user_lock(user_id)
+                async with user_lock:
+                    user = self._get_user(user_id)
+                    if self.consume_enabled:
+                        user["bananas"] += self.cost_per_draw
+                        user["total_used"] -= self.cost_per_draw
+                    if self.max_daily_draws > 0:
+                        user["daily_draws"] -= 1
+                    self._save_sign_data()
+                    logger.warning(f"[BananaSign] 用户 {user_id} 任务异常，已回滚预扣")
+            yield event.chain_result(
+                [
+                    Comp.Reply(id=event.message_obj.message_id),
+                    Comp.Plain("❌ 图片生成时发生内部错误"),
+                ]
+            )
         finally:
             self.running_tasks.pop(task_id, None)
             # 目前只有 telegram 平台需要清理缓存
@@ -1043,9 +1063,12 @@ class BananaSign(Star):
                 if len(image_b64_list) >= max_allowed_images:
                     break
                 filename = filename.strip()
-                if filename:
+                # 路径穿越防护：只允许文件名，拒绝路径分隔符
+                if filename and ".." not in filename and "/" not in filename and "\\" not in filename:
                     path = self.refer_images_dir / filename
-                    mime_type, b64_data = await asyncio.to_thread(read_file, path)
+                    mime_type, b64_data = await asyncio.to_thread(
+                        read_file, path, allowed_dir=self.refer_images_dir
+                    )
                     if mime_type and b64_data:
                         image_b64_list.append((mime_type, b64_data))
         # 图片去重
@@ -1189,78 +1212,82 @@ class BananaSign(Star):
     async def sign_in(self, event: AstrMessageEvent):
         """每日签到"""
         user_id = str(event.get_sender_id())
-        user = self._get_user(user_id)
 
-        today = date.today().isoformat()
-        last_sign = user.get("last_sign")
+        # 使用用户锁防止并发签到
+        user_lock = self._get_user_lock(user_id)
+        async with user_lock:
+            user = self._get_user(user_id)
 
-        # 已签到情况
-        if last_sign == today:
-            # 管理员显示 ∞
-            is_admin = self.is_global_admin(event)
-            balance_display = "∞" if is_admin else user["bananas"]
+            today = date.today().isoformat()
+            last_sign = user.get("last_sign")
 
-            # 尝试使用卡片渲染
-            if self.sign_card_renderer:
+            # 已签到情况
+            if last_sign == today:
+                # 管理员显示 ∞
+                is_admin = self.is_global_admin(event)
+                balance_display = "∞" if is_admin else user["bananas"]
+
+                # 尝试使用卡片渲染
+                if self.sign_card_renderer:
+                    try:
+                        img_bytes = self.sign_card_renderer.render(
+                            reward=0,
+                            daily_reward=self.daily_reward,
+                            streak_bonus=0,
+                            lucky_reward=0,
+                            total_bananas=balance_display,
+                            total_signs=user["total_signs"],
+                            streak=user["streak"],
+                            already_signed=True,
+                        )
+                        yield event.chain_result([Comp.Image.fromBytes(img_bytes)])
+                        return
+                    except Exception as e:
+                        logger.warning(f"[BananaSign] 签到卡片渲染失败: {e}")
+
+                # 降级为文本
+                yield event.plain_result(
+                    f"🍌 今天已经签到过了~\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"当前余额: {balance_display} 香蕉\n"
+                    f"连续签到: {user['streak']} 天\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"💡 香蕉可用于画图功能"
+                )
+                return
+
+            # 计算连续签到
+            if last_sign:
                 try:
-                    img_bytes = self.sign_card_renderer.render(
-                        reward=0,
-                        daily_reward=self.daily_reward,
-                        streak_bonus=0,
-                        lucky_reward=0,
-                        total_bananas=balance_display,
-                        total_signs=user["total_signs"],
-                        streak=user["streak"],
-                        already_signed=True,
-                    )
-                    yield event.chain_result([Comp.Image.fromBytes(img_bytes)])
-                    return
-                except Exception as e:
-                    logger.warning(f"[BananaSign] 签到卡片渲染失败: {e}")
-
-            # 降级为文本
-            yield event.plain_result(
-                f"🍌 今天已经签到过了~\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"当前余额: {balance_display} 香蕉\n"
-                f"连续签到: {user['streak']} 天\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"💡 香蕉可用于画图功能"
-            )
-            return
-
-        # 计算连续签到
-        if last_sign:
-            try:
-                last_date = datetime.strptime(last_sign, "%Y-%m-%d").date()
-                if (date.today() - last_date).days == 1:
-                    user["streak"] += 1
-                else:
+                    last_date = datetime.strptime(last_sign, "%Y-%m-%d").date()
+                    if (date.today() - last_date).days == 1:
+                        user["streak"] += 1
+                    else:
+                        user["streak"] = 1
+                except ValueError:
                     user["streak"] = 1
-            except ValueError:
+            else:
                 user["streak"] = 1
-        else:
-            user["streak"] = 1
 
-        reward = self.daily_reward
-        streak_bonus_reward = 0
-        lucky_reward = 0
+            reward = self.daily_reward
+            streak_bonus_reward = 0
+            lucky_reward = 0
 
-        # 连续签到 7 天奖励
-        if user["streak"] % 7 == 0:
-            streak_bonus_reward = self.streak_bonus
-            reward += streak_bonus_reward
+            # 连续签到 7 天奖励
+            if user["streak"] % 7 == 0:
+                streak_bonus_reward = self.streak_bonus
+                reward += streak_bonus_reward
 
-        # 幸运星随机奖励
-        if self.lucky_max > 0:
-            lucky_reward = random.randint(self.lucky_min, self.lucky_max)
-            if lucky_reward > 0:
-                reward += lucky_reward
+            # 幸运星随机奖励
+            if self.lucky_max > 0:
+                lucky_reward = random.randint(self.lucky_min, self.lucky_max)
+                if lucky_reward > 0:
+                    reward += lucky_reward
 
-        user["bananas"] += reward
-        user["total_signs"] += 1
-        user["last_sign"] = today
-        self._save_sign_data()
+            user["bananas"] += reward
+            user["total_signs"] += 1
+            user["last_sign"] = today
+            self._save_sign_data()
 
         # 管理员显示 ∞
         is_admin = self.is_global_admin(event)

@@ -30,6 +30,16 @@ def is_safe_url(url: str) -> bool:
         if not hostname:
             return False
 
+        # 可信域名白名单（跳过 IP 检查）
+        trusted_domains = (
+            ".qq.com",
+            ".qlogo.cn",
+            ".gtimg.cn",
+            ".qpic.cn",
+        )
+        if any(hostname.endswith(domain) for domain in trusted_domains):
+            return True
+
         # 解析域名获取 IP
         try:
             ip = socket.gethostbyname(hostname)

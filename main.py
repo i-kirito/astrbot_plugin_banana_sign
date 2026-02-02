@@ -360,6 +360,9 @@ class BananaSign(Star):
                 elif value.isdigit():
                     params[key] = int(value)
                 else:
+                    # image_size 参数值转大写（支持 2k -> 2K）
+                    if key == "image_size":
+                        value = value.upper()
                     params[key] = value
                 continue
             filtered.append(token)

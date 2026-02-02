@@ -1,6 +1,6 @@
 name: astrbot_plugin_banana_sign
 display_name: 🍌香蕉签到画图🍌
 desc: 签到获取香蕉积分，消耗积分使用 AI 画图功能。支持 Gemini、OpenAI、VertexAI 逆向等多种提供商。
-version: 2.0.4
+version: 2.0.5
 author: ikirito
 repo: https://github.com/i-kirito/astrbot_plugin_banana_sign

@@ -297,8 +297,8 @@
     "params_alias_map": {
         "description": "参数别名映射",
         "type": "list",
-        "default": ["append_mode:gather_mode"],
-        "hint": "格式是 自定义名称:内置参数名称 设置后使用自定义名称和内置参数名称皆可应用参数。参数名称冲突可能会相互覆盖。"
+        "default": ["append_mode:gather_mode", "s:image_size", "p:providers"],
+        "hint": "格式是 自定义名称:内置参数名称。支持 -s 2K（分辨率）和 -p Banana（提供商）短参数。另外支持直接写 1k/2k/4k 或提供商名称。"
     },
     "common_config": {
         "description": "常规配置",

@@ -303,6 +303,14 @@ class BananaSign(Star):
     def parsing_prompt_params(self, prompt: str) -> tuple[list[str], dict]:
         """解析提示词中的参数，若没有指定参数则使用默认值填充。必须是包括命令和参数的完整提示词"""
 
+        # 分辨率快捷值映射
+        size_shortcuts = {"1k", "2k", "4k"}
+        # 提供商快捷值（从配置中获取，建立小写到原名的映射）
+        provider_shortcuts = {}
+        if hasattr(self, 'providers_config'):
+            for name in self.providers_config.keys():
+                provider_shortcuts[name.lower()] = name  # 小写key -> 原始名称
+
         # 以空格分割单词
         tokens = prompt.split()
         # 第一个单词作为命令或命令列表
@@ -327,6 +335,21 @@ class BananaSign(Star):
             token = next(tokens_iter, None)
             if token is None:
                 break
+
+            token_lower = token.lower()
+
+            # 快捷分辨率参数（1k/2k/4k 直接识别）
+            if token_lower in size_shortcuts:
+                params["image_size"] = token.upper()
+                logger.debug(f"[BananaSign] 解析到分辨率参数: {token} -> {token.upper()}")
+                continue
+
+            # 快捷提供商参数（直接识别提供商名称，大小写不敏感）
+            if token_lower in provider_shortcuts:
+                params["providers"] = provider_shortcuts[token_lower]  # 使用原始名称
+                logger.debug(f"[BananaSign] 解析到提供商参数: {token} -> {provider_shortcuts[token_lower]}")
+                continue
+
             # 支持 --param 和 -p 两种格式（大小写不敏感）
             if token.startswith("--"):
                 key = token[2:].lower()

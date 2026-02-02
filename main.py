@@ -327,33 +327,41 @@ class BananaSign(Star):
             token = next(tokens_iter, None)
             if token is None:
                 break
+            # 支持 --param 和 -p 两种格式（大小写不敏感）
             if token.startswith("--"):
-                key = token[2:]
-                # 处理参数别称映射
-                if key in self.params_alias_map:
-                    key = self.params_alias_map[key]
-                # 仅处理已知参数
-                if key in PARAMS_LIST:
-                    value = next(tokens_iter, None)
-                    if value is None:
-                        params[key] = True
-                        break
-                    value = value.strip()
-                    if value.startswith("--"):
-                        params[key] = True
-                        # 将被提前迭代的单词放回迭代流的最前端
-                        tokens_iter = itertools.chain([value], tokens_iter)
-                        continue
-                    elif value.lower() == "true":
-                        params[key] = True
-                    elif value.lower() == "false":
-                        params[key] = False
-                    # 处理字符串数字类型
-                    elif value.isdigit():
-                        params[key] = int(value)
-                    else:
-                        params[key] = value
+                key = token[2:].lower()
+            elif token.startswith("-") and len(token) > 1 and not token[1].isdigit():
+                # 单横杠短参数，排除负数如 -1
+                key = token[1:].lower()
+            else:
+                filtered.append(token)
+                continue
+
+            # 处理参数别称映射
+            if key in self.params_alias_map:
+                key = self.params_alias_map[key]
+            # 仅处理已知参数
+            if key in PARAMS_LIST:
+                value = next(tokens_iter, None)
+                if value is None:
+                    params[key] = True
+                    break
+                value = value.strip()
+                if value.startswith("--") or (value.startswith("-") and len(value) > 1 and not value[1].isdigit()):
+                    params[key] = True
+                    # 将被提前迭代的单词放回迭代流的最前端
+                    tokens_iter = itertools.chain([value], tokens_iter)
                     continue
+                elif value.lower() == "true":
+                    params[key] = True
+                elif value.lower() == "false":
+                    params[key] = False
+                # 处理字符串数字类型
+                elif value.isdigit():
+                    params[key] = int(value)
+                else:
+                    params[key] = value
+                continue
             filtered.append(token)
 
         # 重新组合提示词

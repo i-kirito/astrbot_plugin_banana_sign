@@ -938,18 +938,8 @@ class BananaSign(Star):
             try:
                 results, err_msg = await task
                 if not results or err_msg:
-                    # 生成失败，回滚预扣的积分和次数（管理员跳过）
-                    if not is_admin and user_id:
-                        user_lock = self._get_user_lock(user_id)
-                        async with user_lock:
-                            user = self._get_user(user_id)
-                            if self.consume_enabled:
-                                user["bananas"] += self.cost_per_draw
-                                user["total_used"] -= self.cost_per_draw
-                            if self.max_daily_draws > 0:
-                                user["daily_draws"] -= 1
-                            await self._save_sign_data_async()
-                            logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
+                    # 生成失败，积分不退还（一旦触发即扣除）
+                    logger.info(f"[BananaSign] 用户 {user_id} 生成失败，积分已扣除不退还")
 
                     # 处理错误消息显示
                     display_err = err_msg or "图片触碰内容审查，无法生成"
@@ -978,19 +968,8 @@ class BananaSign(Star):
                 logger.info(f"{task_id} 任务被取消")
                 return
             except Exception as e:
-                # 捕获所有异常，确保回滚预扣
+                # 捕获所有异常，积分不退还（一旦触发即扣除）
                 logger.error(f"[BananaSign] 任务执行异常: {e}", exc_info=True)
-                if not is_admin and user_id:
-                    user_lock = self._get_user_lock(user_id)
-                    async with user_lock:
-                        user = self._get_user(user_id)
-                        if self.consume_enabled:
-                            user["bananas"] += self.cost_per_draw
-                            user["total_used"] -= self.cost_per_draw
-                        if self.max_daily_draws > 0:
-                            user["daily_draws"] -= 1
-                        await self._save_sign_data_async()
-                        logger.warning(f"[BananaSign] 用户 {user_id} 任务异常，已回滚预扣")
                 yield event.chain_result(
                     [
                         Comp.Reply(id=event.message_obj.message_id),

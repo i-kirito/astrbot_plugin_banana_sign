@@ -169,6 +169,10 @@ class BananaSign(Star):
         except Exception as e:
             logger.error(f"[BananaSign] 保存数据失败: {e}")
 
+    async def _save_sign_data_async(self):
+        """异步保存用户签到数据（避免阻塞事件循环）"""
+        await asyncio.to_thread(self._save_sign_data)
+
     def _get_user(self, user_id: str) -> Dict[str, Any]:
         """获取用户数据，不存在则创建"""
         user_id = str(user_id)
@@ -785,7 +789,7 @@ class BananaSign(Star):
                     user["total_used"] += self.cost_per_draw
                 if self.max_daily_draws > 0:
                     user["daily_draws"] += 1
-                self._save_sign_data()
+                await self._save_sign_data_async()
                 logger.info(f"[BananaSign] 用户 {user_id} 预扣 {self.cost_per_draw} 香蕉，今日次数 {user['daily_draws']}/{self.max_daily_draws}")
         else:
             user_id = None  # 管理员不需要用户ID
@@ -944,7 +948,7 @@ class BananaSign(Star):
                                 user["total_used"] -= self.cost_per_draw
                             if self.max_daily_draws > 0:
                                 user["daily_draws"] -= 1
-                            self._save_sign_data()
+                            await self._save_sign_data_async()
                             logger.warning(f"[BananaSign] 用户 {user_id} 生成失败，已回滚预扣")
 
                     # 处理错误消息显示
@@ -985,7 +989,7 @@ class BananaSign(Star):
                             user["total_used"] -= self.cost_per_draw
                         if self.max_daily_draws > 0:
                             user["daily_draws"] -= 1
-                        self._save_sign_data()
+                        await self._save_sign_data_async()
                         logger.warning(f"[BananaSign] 用户 {user_id} 任务异常，已回滚预扣")
                 yield event.chain_result(
                     [
@@ -1268,7 +1272,8 @@ class BananaSign(Star):
                 # 尝试使用卡片渲染
                 if self.sign_card_renderer:
                     try:
-                        img_bytes = self.sign_card_renderer.render(
+                        img_bytes = await asyncio.to_thread(
+                            self.sign_card_renderer.render,
                             reward=0,
                             daily_reward=self.daily_reward,
                             streak_bonus=0,
@@ -1325,7 +1330,7 @@ class BananaSign(Star):
             user["bananas"] += reward
             user["total_signs"] += 1
             user["last_sign"] = today
-            self._save_sign_data()
+            await self._save_sign_data_async()
 
         # 管理员显示 ∞
         is_admin = self.is_global_admin(event)
@@ -1334,7 +1339,8 @@ class BananaSign(Star):
         # 尝试使用卡片渲染
         if self.sign_card_renderer:
             try:
-                img_bytes = self.sign_card_renderer.render(
+                img_bytes = await asyncio.to_thread(
+                    self.sign_card_renderer.render,
                     reward=reward,
                     daily_reward=self.daily_reward,
                     streak_bonus=streak_bonus_reward,

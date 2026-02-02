@@ -142,7 +142,8 @@ class OpenAIChatProvider(BaseProvider):
                         logger.warning(
                             f"[BIG BANANA] 图片生成失败, 响应内容: {response.text[:1024]}"
                         )
-                        return None, 200, f"图片生成失败: {finish_reason}"
+                        # finish_reason 非 stop 通常是内容审查
+                        return None, 200, "图片触碰内容审查，无法生成"
                 # 最后再检查是否有图片数据
                 if not images_url and not b64_images:
                     logger.warning(

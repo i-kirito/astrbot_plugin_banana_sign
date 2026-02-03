@@ -1518,6 +1518,7 @@ class BananaSign(Star):
             f"  /香蕉余额    查看当前积分\n"
             f"  /签到排行    查看排行榜\n"
             f"  /画图队列    查看当前队列状态\n"
+            f"  /画图帮助    查看画图功能帮助\n"
             f"\n"
             f"【积分规则】\n"
             f"  每日签到: +{self.daily_reward} 香蕉\n"

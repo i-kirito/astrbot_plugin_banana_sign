@@ -103,7 +103,7 @@
                 "description": "api_url",
                 "type": "string",
                 "default": "https://generativelanguage.googleapis.com/v1beta/models",
-                "hint": "Gemini示例：https://<base_url>/v1beta/models；OpenAI示例：http://<base_url>/v1/chat/completions；VertexAI逆向可留空。"
+                "hint": "Gemini示例：https://<base_url>/v1beta/models；OpenAI示例：http://<base_url>/v1/chat/completions；VertexAI逆向可留空"
             },
             "model": {
                 "description": "模型",

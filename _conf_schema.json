@@ -365,7 +365,8 @@
     "vertex_ai_anonymous_config": {
         "description": "Vertex AI Anonymous配置项",
         "type": "object",
-        "hint": "提供商配置中，除了接口规范和模型外，其他选项皆对Vertex AI Anonymous规范无效，请在此配置。",
+        "hint": "仅当任一提供商的接口规范类型选择 Vertex_AI_Anonymous 时需要配置此项。",
+        "condition": { "use_vertex_ai_anonymous": true },
         "items": {
             "recaptcha_base_api": {
                 "description": "Recaptcha Base API",
@@ -392,6 +393,12 @@
                 "hint": "独立于常规接口的重试次数配置。"
             }
         }
+    },
+    "use_vertex_ai_anonymous": {
+        "description": "使用 Vertex AI Anonymous",
+        "type": "bool",
+        "default": false,
+        "hint": "启用后显示 Vertex AI Anonymous 配置项。仅当提供商选择 Vertex_AI_Anonymous 规范时需要开启。"
     },
     "preference_config": {
         "description": "偏好设置",

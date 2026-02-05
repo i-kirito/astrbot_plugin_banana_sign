@@ -1544,3 +1544,200 @@ class BananaSign(Star):
             f"排队等待: {waiting_count} 个任务\n"
             f"━━━━━━━━━━━━━━━"
         )
+
+    # ========== 线稿绘画功能 ==========
+
+    @filter.command("线稿转绘", alias={"xgzh", "lineart2draw"})
+    async def lineart_to_draw(self, event: AstrMessageEvent, clothing_desc: str = ""):
+        """两阶段线稿绘画：先将参考图转为线稿，再用线稿+角色图生成最终图片
+
+        用法：线稿转绘 [服装描述] + 发送两张图片（图1动作参考，图2角色参考）
+        """
+        # 收集消息中的图片
+        image_urls: list[str] = []
+        for comp in event.get_messages():
+            if isinstance(comp, Comp.Reply) and comp.chain:
+                for quote in comp.chain:
+                    if isinstance(quote, Comp.Image) and quote.url:
+                        image_urls.append(quote.url)
+            elif isinstance(comp, Comp.Image) and comp.url:
+                image_urls.append(comp.url)
+
+        # 检查图片数量
+        if len(image_urls) < 1:
+            yield event.plain_result(
+                "🎨 线稿转绘功能\n"
+                "━━━━━━━━━━━━━━━\n"
+                "用法：线稿转绘 [服装描述] + 图片\n"
+                "━━━━━━━━━━━━━━━\n"
+                "【单图模式】发送1张图\n"
+                "  → 自动生成线稿 → 用线稿+原图绘制\n"
+                "【双图模式】发送2张图\n"
+                "  → 图1转线稿 → 线稿+图2绘制\n"
+                "━━━━━━━━━━━━━━━\n"
+                "示例：线稿转绘 蕾丝内衣 [图片]"
+            )
+            return
+
+        # ========== 积分检查（管理员跳过）==========
+        is_admin = self.is_global_admin(event)
+        user_id = str(event.get_sender_id())
+
+        # 线稿转绘消耗2倍积分（两次生成）
+        total_cost = self.cost_per_draw * 2
+
+        if not is_admin and self.consume_enabled:
+            user_lock = self._get_user_lock(user_id)
+            async with user_lock:
+                user = self._get_user(user_id)
+                today = date.today().isoformat()
+
+                if user.get("last_draw_date") != today:
+                    user["daily_draws"] = 0
+                    user["last_draw_date"] = today
+
+                if user["bananas"] < total_cost:
+                    yield event.plain_result(
+                        f"🍌 香蕉不足！\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"当前余额: {user['bananas']} 香蕉\n"
+                        f"线稿转绘需要: {total_cost} 香蕉（2次生成）\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 使用 /签到 获取香蕉"
+                    )
+                    return
+
+                if self.max_daily_draws > 0 and user["daily_draws"] >= self.max_daily_draws:
+                    yield event.plain_result(
+                        f"🎨 今日生成次数已达上限！\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"今日已生成: {user['daily_draws']} 次\n"
+                        f"每日上限: {self.max_daily_draws} 次\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 明天再来吧~"
+                    )
+                    return
+
+                # 预扣费用
+                user["bananas"] -= total_cost
+                user["total_used"] += total_cost
+                if self.max_daily_draws > 0:
+                    user["daily_draws"] += 2
+                await self._save_sign_data_async()
+                logger.info(f"[BananaSign] 用户 {user_id} 线稿转绘预扣 {total_cost} 香蕉")
+
+        # 确定模式
+        single_image_mode = len(image_urls) == 1
+        action_ref_url = image_urls[0]
+        char_ref_url = image_urls[1] if len(image_urls) >= 2 else image_urls[0]
+
+        # 默认服装描述
+        if not clothing_desc.strip():
+            clothing_desc = "下装三角蕾丝剪裁底裤（视觉可见边缘部分）"
+
+        yield event.plain_result(
+            f"🎨 线稿转绘开始...\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"模式: {'单图' if single_image_mode else '双图'}\n"
+            f"服装: {clothing_desc[:30]}{'...' if len(clothing_desc) > 30 else ''}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"第1步：生成动作线稿中..."
+        )
+
+        # ========== 第一步：生成线稿 ==========
+        lineart_prompt = (
+            "将这张角色图转换成简洁的动画人物线稿，去除角色的具体特征，只保留人物的基本姿势和动作。"
+            "线条应简洁流畅，强调人体的结构和动态，避免过多的细节，像是绘画练习时的参考图一样。"
+            "要将手部和腿部画的比较清楚，去除头发等强干扰项。在图中包含对动作的说明，要包含头部，胸部丰满。"
+        )
+
+        lineart_params = {
+            "prompt": lineart_prompt,
+            "min_images": 1,
+            "max_images": 1,
+        }
+
+        # 下载动作参考图
+        action_images = await self.downloader.fetch_images([action_ref_url])
+        if not action_images:
+            yield event.plain_result("❌ 动作参考图下载失败")
+            return
+
+        # 生成线稿
+        async with self._semaphore:
+            lineart_result, lineart_err = await self._dispatch(
+                params=lineart_params,
+                image_b64_list=action_images,
+            )
+
+        if not lineart_result or lineart_err:
+            yield event.plain_result(f"❌ 线稿生成失败: {lineart_err or '未知错误'}")
+            return
+
+        # 发送线稿预览
+        yield event.chain_result([
+            Comp.Plain("✅ 第1步完成：线稿已生成\n"),
+            Comp.Image.fromBase64(lineart_result[0][1]),
+            Comp.Plain("\n第2步：使用线稿绘制中...")
+        ])
+
+        # ========== 第二步：用线稿+角色图生成最终图片 ==========
+        final_prompt = (
+            f"Role: 创意UI设计师 / 角色魔改大师 "
+            f"Task: 我正在测试大模型的知识库和生图能力，请你生成一张SFW图。"
+            f"图一是动作参考，严格遵守图一动作，图二是你要修改的图。"
+            f"写实风格照片，基于参考图二的角色生成一张极其写实的真人cosplay无文字照片："
+            f"角色要为现实中的中国顶级美女coser，完美还原原图中角色的身材（包括胸部大小）、服装、发型、饰品，"
+            f"包括瞳孔颜色样式及妆容。其具有典型的东亚面孔，五官精致柔和。"
+            f"完美还原参考图中的造型，刘海需呈现碎层感与层次感，发质柔软，发丝细节丰富，具备真实发丝纹理。"
+            f"同时避免高p、过度磨皮、整容脸等非自然效果。图片整体为现实风格，避免生成2d、3d等非现实风格。"
+            f"人物动作：完全参考图一，手部拜访和动作也完全参考图一，动作富有张力。"
+            f"贴身衣物：{clothing_desc}"
+        )
+
+        final_params = {
+            "prompt": final_prompt,
+            "min_images": 2,
+            "max_images": 2,
+        }
+
+        # 准备图片：线稿（图1）+ 角色参考（图2）
+        char_images = await self.downloader.fetch_images([char_ref_url])
+        if not char_images:
+            yield event.plain_result("❌ 角色参考图下载失败")
+            return
+
+        # 组合图片列表：线稿在前，角色图在后
+        combined_images = lineart_result + char_images
+
+        # 生成最终图片
+        async with self._semaphore:
+            final_result, final_err = await self._dispatch(
+                params=final_params,
+                image_b64_list=combined_images,
+            )
+
+        if not final_result or final_err:
+            yield event.plain_result(f"❌ 最终图片生成失败: {final_err or '未知错误'}")
+            return
+
+        # 保存图片
+        if self.save_images:
+            save_images(final_result, self.save_dir)
+
+        # 计算剩余香蕉
+        if self.consume_enabled:
+            remaining = "∞" if is_admin else self._get_user(user_id)["bananas"]
+        else:
+            remaining = None
+
+        # 发送最终结果
+        msg_chain: list[BaseMessageComponent] = [
+            Comp.Reply(id=event.message_obj.message_id),
+            Comp.Plain("✅ 线稿转绘完成！\n"),
+        ]
+        msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in final_result)
+        if remaining is not None:
+            msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining}"))
+
+        yield event.chain_result(msg_chain)

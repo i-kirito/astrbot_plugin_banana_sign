@@ -122,11 +122,16 @@ class Downloader:
             logger.warning(f"[BIG BANANA] 拒绝不安全的 URL: {url}")
             return None
 
+        # 构造 Referer header 防止盗链检测
+        parsed = urlparse(url)
+        referer = f"{parsed.scheme}://{parsed.netloc}/"
+
         try:
             response = await self.session.get(
                 url,
                 proxy=self.def_common_config.proxy,
                 timeout=30,
+                headers={"Referer": referer},
             )
             if response.status_code != 200 or not response.content:
                 logger.warning(
@@ -137,7 +142,9 @@ class Downloader:
             return content
         except (SSLError, CertificateVerifyError):
             # 关闭SSL验证
-            response = await self.session.get(url, timeout=30, verify=False)
+            response = await self.session.get(
+                url, timeout=30, verify=False, headers={"Referer": referer}
+            )
             if response.status_code != 200 or not response.content:
                 logger.warning(
                     f"[BIG BANANA] 图片下载失败，状态码: {response.status_code}"

@@ -22,7 +22,13 @@ class HttpManager:
         使用Session时必须显式传递超时参数，这里未使用插件配置。
         """
         if self._curl_session is None or getattr(self._curl_session, "_closed", False):
-            self._curl_session = AsyncSession(timeout=30)
+            self._curl_session = AsyncSession(
+                timeout=30,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                }
+            )
         return self._curl_session
 
     async def close_session(self) -> None:

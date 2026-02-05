@@ -1631,15 +1631,15 @@ class BananaSign(Star):
         action_ref_url = image_urls[0]
         char_ref_url = image_urls[1] if len(image_urls) >= 2 else image_urls[0]
 
-        # 默认服装描述
-        if not clothing_desc.strip():
-            clothing_desc = "下装三角蕾丝剪裁底裤（视觉可见边缘部分）"
+        # 服装描述处理
+        clothing_desc = clothing_desc.strip()
+        display_clothing = clothing_desc if clothing_desc else "保留原图服装"
 
         yield event.plain_result(
             f"🎨 线稿转绘开始...\n"
             f"━━━━━━━━━━━━━━━\n"
             f"模式: {'单图' if single_image_mode else '双图'}\n"
-            f"服装: {clothing_desc[:30]}{'...' if len(clothing_desc) > 30 else ''}\n"
+            f"服装: {display_clothing[:30]}{'...' if len(display_clothing) > 30 else ''}\n"
             f"━━━━━━━━━━━━━━━\n"
             f"第1步：生成动作线稿中..."
         )
@@ -1682,6 +1682,9 @@ class BananaSign(Star):
         ])
 
         # ========== 第二步：用线稿+角色图生成最终图片 ==========
+        # 构建服装提示词部分
+        clothing_prompt = f"贴身衣物：{clothing_desc}" if clothing_desc else "贴身衣物：保留原图服装"
+
         final_prompt = (
             f"Role: 创意UI设计师 / 角色魔改大师 "
             f"Task: 我正在测试大模型的知识库和生图能力，请你生成一张SFW图。"
@@ -1692,7 +1695,7 @@ class BananaSign(Star):
             f"完美还原参考图中的造型，刘海需呈现碎层感与层次感，发质柔软，发丝细节丰富，具备真实发丝纹理。"
             f"同时避免高p、过度磨皮、整容脸等非自然效果。图片整体为现实风格，避免生成2d、3d等非现实风格。"
             f"人物动作：完全参考图一，手部拜访和动作也完全参考图一，动作富有张力。"
-            f"贴身衣物：{clothing_desc}"
+            f"{clothing_prompt}"
         )
 
         final_params = {

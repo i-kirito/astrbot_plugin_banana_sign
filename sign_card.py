@@ -7,6 +7,7 @@ import os
 import io
 import base64
 import logging
+import functools
 from datetime import datetime
 from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
@@ -72,6 +73,7 @@ class SignCardRenderer:
                 return path
         return None
 
+    @functools.lru_cache(maxsize=32)
     def _load_font(self, size: int) -> ImageFont.FreeTypeFont:
         """加载粗体字体"""
         try:
@@ -82,6 +84,7 @@ class SignCardRenderer:
             logger.debug(f"[SignCard] 加载字体失败: {e}")
         return ImageFont.load_default()
 
+    @functools.lru_cache(maxsize=32)
     def _load_mono_font(self, size: int) -> ImageFont.FreeTypeFont:
         """加载等宽字体"""
         try:
@@ -91,6 +94,7 @@ class SignCardRenderer:
             logger.debug(f"[SignCard] 加载等宽字体失败: {e}")
         return self._load_font(size)
 
+    @functools.lru_cache(maxsize=4)
     def _load_character_image(self, side: str) -> Optional[Image.Image]:
         """加载角色装饰图片"""
         # 尝试加载左右角色图
@@ -101,11 +105,17 @@ class SignCardRenderer:
             if os.path.exists(path):
                 try:
                     img = Image.open(path).convert("RGBA")
+                    # 预先缩放并缓存
+                    if side == "left":
+                         img = img.resize((160, 350), Image.Resampling.LANCZOS)
+                    elif side == "right":
+                         img = img.resize((160, 350), Image.Resampling.LANCZOS)
                     return img
                 except Exception as e:
                     logger.debug(f"[SignCard] 加载角色图片失败 {path}: {e}")
         return None
 
+    @functools.lru_cache(maxsize=1)
     def _load_background(self) -> Optional[Image.Image]:
         """加载背景图片"""
         # 优先从插件根目录加载，其次从 assets 目录
@@ -177,12 +187,10 @@ class SignCardRenderer:
 
         # 绘制角色图片
         if char_left:
-            # 缩放到合适大小
-            char_left = char_left.resize((160, 350), Image.Resampling.LANCZOS)
+            # 已在加载时缩放
             img.paste(char_left, (10, 25), char_left)
 
         if char_right:
-            char_right = char_right.resize((160, 350), Image.Resampling.LANCZOS)
             img.paste(char_right, (self.width - 170, 25), char_right)
 
         # 绘制签到信息

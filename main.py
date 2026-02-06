@@ -3,6 +3,7 @@ import itertools
 import os
 import json
 import random
+import threading
 from datetime import datetime, date
 from typing import Dict, Any
 
@@ -109,6 +110,10 @@ class BananaSign(Star):
         self.user_whitelist_enabled = self.whitelist_config.get("user_enabled", False)
         self.user_whitelist = self.whitelist_config.get("user_whitelist", [])
 
+        # 白名单集合缓存（避免每条消息都做 list -> str 转换）
+        self.group_whitelist_set = {str(gid) for gid in self.group_whitelist}
+        self.user_whitelist_set = {str(uid) for uid in self.user_whitelist}
+
         # 前缀配置
         prefix_config = self.conf.get("prefix_config", {})
         self.coexist_enabled = prefix_config.get("coexist_enabled", False)
@@ -146,6 +151,8 @@ class BananaSign(Star):
 
         # 用户资源锁（防止并发扣费）
         self.user_locks: dict[str, asyncio.Lock] = {}
+        # 签到数据文件锁（防止并发写文件导致 JSON 竞争）
+        self._sign_data_file_lock = threading.Lock()
 
         logger.info(f"[BananaSign] 插件已加载，用户数: {len(self.user_data.get('users', {}))}")
 
@@ -164,8 +171,9 @@ class BananaSign(Star):
     def _save_sign_data(self):
         """保存用户签到数据"""
         try:
-            with open(self.sign_data_file, 'w', encoding='utf-8') as f:
-                json.dump(self.user_data, f, ensure_ascii=False, indent=2)
+            with self._sign_data_file_lock:
+                with open(self.sign_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.user_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"[BananaSign] 保存数据失败: {e}")
 
@@ -428,12 +436,14 @@ class BananaSign(Star):
             return
 
         msg_type = ""
-        if cmd_type in ["用户", "user"] and target_id not in self.user_whitelist:
+        if cmd_type in ["用户", "user"] and target_id not in self.user_whitelist_set:
             msg_type = "用户"
             self.user_whitelist.append(target_id)
-        elif cmd_type in ["群组", "group"] and target_id not in self.group_whitelist:
+            self.user_whitelist_set.add(str(target_id))
+        elif cmd_type in ["群组", "group"] and target_id not in self.group_whitelist_set:
             msg_type = "群组"
             self.group_whitelist.append(target_id)
+            self.group_whitelist_set.add(str(target_id))
         elif cmd_type not in ["用户", "user", "群组", "group"]:
             yield event.plain_result("❌ 类型错误，请使用「用户」或「群组」。")
             return
@@ -461,12 +471,14 @@ class BananaSign(Star):
             )
             return
 
-        if cmd_type in ["用户", "user"] and target_id in self.user_whitelist:
+        if cmd_type in ["用户", "user"] and target_id in self.user_whitelist_set:
             msg_type = "用户"
             self.user_whitelist.remove(target_id)
-        elif cmd_type in ["群组", "group"] and target_id in self.group_whitelist:
+            self.user_whitelist_set.discard(str(target_id))
+        elif cmd_type in ["群组", "group"] and target_id in self.group_whitelist_set:
             msg_type = "群组"
             self.group_whitelist.remove(target_id)
+            self.group_whitelist_set.discard(str(target_id))
         elif cmd_type not in ["用户", "user", "群组", "group"]:
             yield event.plain_result("❌ 类型错误，请使用「用户」或「群组」。")
             return
@@ -831,7 +843,7 @@ class BananaSign(Star):
         # 群白名单判断
         if (
             self.group_whitelist_enabled
-            and str(event.unified_msg_origin) not in [str(gid) for gid in self.group_whitelist]
+            and str(event.unified_msg_origin) not in self.group_whitelist_set
         ):
             logger.info(f"群 {event.unified_msg_origin} 不在白名单内，跳过处理")
             return
@@ -839,7 +851,7 @@ class BananaSign(Star):
         # 用户白名单判断
         if (
             self.user_whitelist_enabled
-            and str(event.get_sender_id()) not in [str(uid) for uid in self.user_whitelist]
+            and str(event.get_sender_id()) not in self.user_whitelist_set
         ):
             logger.info(f"用户 {event.get_sender_id()} 不在白名单内，跳过处理")
             return
@@ -1586,7 +1598,8 @@ class BananaSign(Star):
         # 线稿转绘消耗2倍积分（两次生成）
         total_cost = self.cost_per_draw * 2
 
-        if not is_admin and self.consume_enabled:
+        # 每日次数限制检查（独立于consume_enabled）
+        if not is_admin and self.max_daily_draws > 0:
             user_lock = self._get_user_lock(user_id)
             async with user_lock:
                 user = self._get_user(user_id)
@@ -1595,6 +1608,24 @@ class BananaSign(Star):
                 if user.get("last_draw_date") != today:
                     user["daily_draws"] = 0
                     user["last_draw_date"] = today
+
+                if user["daily_draws"] + 2 > self.max_daily_draws:
+                    yield event.plain_result(
+                        f"🎨 今日生成次数不足！\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"今日已生成: {user['daily_draws']} 次\n"
+                        f"每日上限: {self.max_daily_draws} 次\n"
+                        f"线稿转绘需要: 2 次额度\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 明天再来吧~"
+                    )
+                    return
+
+        # 香蕉扣费检查（依赖consume_enabled）
+        if not is_admin and self.consume_enabled:
+            user_lock = self._get_user_lock(user_id)
+            async with user_lock:
+                user = self._get_user(user_id)
 
                 if user["bananas"] < total_cost:
                     yield event.plain_result(
@@ -1607,17 +1638,6 @@ class BananaSign(Star):
                     )
                     return
 
-                if self.max_daily_draws > 0 and user["daily_draws"] >= self.max_daily_draws:
-                    yield event.plain_result(
-                        f"🎨 今日生成次数已达上限！\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"今日已生成: {user['daily_draws']} 次\n"
-                        f"每日上限: {self.max_daily_draws} 次\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"💡 明天再来吧~"
-                    )
-                    return
-
                 # 预扣费用
                 user["bananas"] -= total_cost
                 user["total_used"] += total_cost
@@ -1625,6 +1645,14 @@ class BananaSign(Star):
                     user["daily_draws"] += 2
                 await self._save_sign_data_async()
                 logger.info(f"[BananaSign] 用户 {user_id} 线稿转绘预扣 {total_cost} 香蕉")
+        elif not is_admin and self.max_daily_draws > 0:
+            # consume_enabled=false但有每日限制时，仍需更新daily_draws
+            user_lock = self._get_user_lock(user_id)
+            async with user_lock:
+                user = self._get_user(user_id)
+                user["daily_draws"] += 2
+                await self._save_sign_data_async()
+                logger.info(f"[BananaSign] 用户 {user_id} 线稿转绘计数+2（无积分消耗模式）")
 
         # 确定模式
         single_image_mode = len(image_urls) == 1
@@ -1634,6 +1662,9 @@ class BananaSign(Star):
         # 服装描述处理
         clothing_desc = clothing_desc.strip()
         display_clothing = clothing_desc if clothing_desc else "保留原图服装"
+
+        # 记录开始时间
+        start_time = datetime.now()
 
         yield event.plain_result(
             f"🎨 线稿转绘开始...\n"
@@ -1674,12 +1705,13 @@ class BananaSign(Star):
             yield event.plain_result(f"❌ 线稿生成失败: {lineart_err or '未知错误'}")
             return
 
-        # 发送线稿预览
-        yield event.chain_result([
-            Comp.Plain("✅ 第1步完成：线稿已生成\n"),
-            Comp.Image.fromBase64(lineart_result[0][1]),
-            Comp.Plain("\n第2步：使用线稿绘制中...")
-        ])
+        # 线稿生成完成，继续第二步
+        yield event.plain_result("✅ 第1步完成：线稿已生成\n第2步：使用线稿绘制中...")
+
+        # 检查事件是否已被停止（用户可能已撤回消息）
+        if getattr(event, '_event_has_stopped', False):
+            logger.info(f"[BananaSign] 线稿转绘被中断（用户撤回）")
+            return
 
         # ========== 第二步：用线稿+角色图生成最终图片 ==========
         # 构建服装提示词部分
@@ -1700,8 +1732,8 @@ class BananaSign(Star):
 
         final_params = {
             "prompt": final_prompt,
-            "min_images": 2,
-            "max_images": 2,
+            "min_images": 1,
+            "max_images": 1,
         }
 
         # 准备图片：线稿（图1）+ 角色参考（图2）
@@ -1734,13 +1766,26 @@ class BananaSign(Star):
         else:
             remaining = None
 
+        # 计算耗时
+        elapsed = datetime.now() - start_time
+        elapsed_str = f"{int(elapsed.total_seconds() // 60):02d}:{int(elapsed.total_seconds() % 60):02d}"
+
+        # 再次检查事件是否已被停止
+        if getattr(event, '_event_has_stopped', False):
+            logger.info(f"[BananaSign] 线稿转绘被中断（用户撤回）")
+            return
+
         # 发送最终结果
         msg_chain: list[BaseMessageComponent] = [
             Comp.Reply(id=event.message_obj.message_id),
             Comp.Plain("✅ 线稿转绘完成！\n"),
         ]
         msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in final_result)
+
+        # 添加耗时和剩余香蕉
+        status_parts = [f"⏰耗时: {elapsed_str}"]
         if remaining is not None:
-            msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining}"))
+            status_parts.append(f"🍌剩余香蕉: {remaining}")
+        msg_chain.append(Comp.Plain(f"\n{'   '.join(status_parts)}"))
 
         yield event.chain_result(msg_chain)

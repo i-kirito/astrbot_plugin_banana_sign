@@ -206,10 +206,10 @@ class OpenAIChatProvider(BaseProvider):
             )
             # 处理流式响应
             streams = response.aiter_content(chunk_size=1024)
-            # 读取完整内容
-            data = b""
+            # 读取完整内容（使用 bytearray 避免 O(n²) 拼接）
+            data = bytearray()
             async for chunk in streams:
-                data += chunk
+                data.extend(chunk)
             result = data.decode("utf-8")
             if response.status_code == 200:
                 b64_images = []

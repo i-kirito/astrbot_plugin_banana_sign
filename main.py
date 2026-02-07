@@ -772,9 +772,15 @@ class BananaSign(Star):
                 matched_prefix = True
                 break
 
+        # 判断是否为私聊（私聊场景无需前缀要求）
+        origin = str(event.unified_msg_origin or "").lower()
+        is_private_chat = "private" in origin or "friend" in origin
+
         # 若未@机器人且未开启混合模式，且配置了前缀列表但消息未匹配到任何前缀，则跳过处理
+        # 注：私聊场景自动跳过前缀检查
         if (
-            not event.is_at_or_wake_command
+            not is_private_chat
+            and not event.is_at_or_wake_command
             and not self.coexist_enabled
             and self.prefix_list
             and not matched_prefix

@@ -30,7 +30,7 @@ from .core.data import (
     ProviderConfig,
 )
 from .core.llm_tools import BigBananaPromptTool, BigBananaTool, remove_tools
-from .core.utils import clear_cache, read_file, save_images, slice_images
+from .core.utils import clear_cache, read_file, save_images
 
 # 提示词参数列表
 PARAMS_LIST = [
@@ -142,32 +142,6 @@ class BananaSign(Star):
 
         # 图片持久化
         self.save_images = self.conf.get("save_images", {}).get("local_save", False)
-
-        # 图片切片配置（用于规避平台尺寸/分辨率限制）
-        image_slice_cfg = self.conf.get("image_slice_config", {})
-        self.image_slice_enabled = image_slice_cfg.get("enabled", False)
-
-        def _safe_conf_int(value, default_value: int, min_value: int) -> int:
-            try:
-                return max(min_value, int(value))
-            except (TypeError, ValueError):
-                return default_value
-
-        self.image_slice_max_height = _safe_conf_int(
-            image_slice_cfg.get("max_height", 1536),
-            default_value=1536,
-            min_value=0,
-        )
-        self.image_slice_max_slices = _safe_conf_int(
-            image_slice_cfg.get("max_slices", 8),
-            default_value=8,
-            min_value=1,
-        )
-        self.image_slice_max_b64_len = _safe_conf_int(
-            image_slice_cfg.get("max_base64_len", 0),
-            default_value=0,
-            min_value=0,
-        )
 
         # 正在运行的任务映射
         self.running_tasks: dict[str, asyncio.Task] = {}
@@ -1213,8 +1187,6 @@ class BananaSign(Star):
         prefix_text: str | None = None,
     ) -> list[BaseMessageComponent]:
         """构建消息链"""
-        final_results = self._maybe_slice_results(event, results)
-
         msg_chain: list[BaseMessageComponent] = [
             Comp.Reply(id=event.message_obj.message_id)
         ]
@@ -1224,14 +1196,14 @@ class BananaSign(Star):
 
         # 对Telegram平台特殊处理，超过10MB的图片需要作为文件发送
         if event.platform_meta.name == "telegram" and any(
-            (b64 and len(b64) > MAX_SIZE_B64_LEN) for _, b64 in final_results
+            (b64 and len(b64) > MAX_SIZE_B64_LEN) for _, b64 in results
         ):
-            save_results = save_images(final_results, self.temp_dir)
+            save_results = save_images(results, self.temp_dir)
             for name_, path_ in save_results:
                 msg_chain.append(Comp.File(name=name_, file=str(path_)))
         else:
             # 其他平台直接发送图片
-            msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in final_results)
+            msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in results)
 
         # 添加生成耗时和剩余香蕉数
         if elapsed_time is not None and remaining_bananas is not None:
@@ -1242,38 +1214,6 @@ class BananaSign(Star):
             msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining_bananas}"))
 
         return msg_chain
-
-    def _maybe_slice_results(
-        self,
-        event: AstrMessageEvent,
-        results: list[tuple[str, str]],
-    ) -> list[tuple[str, str]]:
-        """根据配置和平台限制自动切片图片"""
-        if not results or not self.image_slice_enabled:
-            return results
-
-        slice_b64_limit = self.image_slice_max_b64_len if self.image_slice_max_b64_len > 0 else None
-        if event.platform_meta.name == "telegram":
-            if slice_b64_limit is None:
-                slice_b64_limit = MAX_SIZE_B64_LEN
-            else:
-                slice_b64_limit = min(slice_b64_limit, MAX_SIZE_B64_LEN)
-
-        try:
-            sliced_results = slice_images(
-                results,
-                max_height=self.image_slice_max_height,
-                max_b64_len=slice_b64_limit,
-                max_slices=self.image_slice_max_slices,
-            )
-            if len(sliced_results) > len(results):
-                logger.info(
-                    f"[BananaSign] 图片切片生效: {len(results)} -> {len(sliced_results)}"
-                )
-            return sliced_results
-        except Exception as e:
-            logger.warning(f"[BananaSign] 图片切片失败，回退原图: {e}")
-            return results
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""

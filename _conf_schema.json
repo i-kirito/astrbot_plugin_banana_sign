@@ -452,36 +452,5 @@
                 "hint": "生成的图片保存到插件数据目录的 save_images 文件夹"
             }
         }
-    },
-    "image_slice_config": {
-        "description": "图片切片配置",
-        "type": "object",
-        "hint": "用于规避平台单图尺寸限制或超长图发送失败问题。",
-        "items": {
-            "enabled": {
-                "description": "启用图片切片",
-                "type": "bool",
-                "default": false,
-                "hint": "启用后，超长图片会按高度自动切片后逐张发送。"
-            },
-            "max_height": {
-                "description": "单张切片最大高度",
-                "type": "int",
-                "default": 1536,
-                "hint": "当原图高度超过该值时自动切片。设为 0 表示不按高度切片。"
-            },
-            "max_base64_len": {
-                "description": "单张切片最大Base64长度",
-                "type": "int",
-                "default": 0,
-                "hint": "用于按体积切片（单位：字符）。设为 0 表示不启用体积限制。Telegram 平台会自动套用 10MB 安全上限。"
-            },
-            "max_slices": {
-                "description": "单图最大切片数",
-                "type": "int",
-                "default": 8,
-                "hint": "限制切片上限，防止单图被拆分过多。"
-            }
-        }
     }
 }

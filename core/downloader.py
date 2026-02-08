@@ -82,7 +82,16 @@ class Downloader:
 
     async def fetch_image(self, url: str) -> tuple[str, str] | None:
         """下载单张图片并转换为 (mime, base64)"""
-        return await self._fetch_image_with_retry(url)
+        result = await self._fetch_image_with_retry(url)
+        if result is None:
+            logger.warning(f"[BIG BANANA] fetch_image 失败: {url}")
+            return None
+
+        mime, b64 = result
+        logger.debug(
+            f"[BIG BANANA] fetch_image 成功: mime={mime}, b64_type={type(b64).__name__}, b64_len={len(b64)}"
+        )
+        return result
 
     async def fetch_images(self, image_urls: list[str]) -> list[tuple[str, str]]:
         """下载多张图片并转换为 (mime, base64) 列表（并发下载，保持输入顺序）"""
@@ -127,6 +136,9 @@ class Downloader:
                 if fmt != "gif":
                     mime = "image/jpeg" if fmt == "jpg" else f"image/{fmt}"
                     b64 = base64.b64encode(image_bytes).decode("utf-8")
+                    logger.debug(
+                        f"[BIG BANANA] 图片处理完成: fmt={fmt}, mime={mime}, bytes={len(image_bytes)}, b64_len={len(b64)}"
+                    )
                     return (mime, b64)
                 # 处理 GIF：取第一帧转PNG
                 buf = BytesIO()
@@ -134,6 +146,9 @@ class Downloader:
                 img = img.convert("RGBA")
                 img.save(buf, format="PNG")
                 b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                logger.debug(
+                    f"[BIG BANANA] GIF转PNG完成: source_bytes={len(image_bytes)}, png_bytes={len(buf.getvalue())}, b64_len={len(b64)}"
+                )
                 return ("image/png", b64)
         except Exception as e:
             logger.warning(f"[BIG BANANA] 图片处理失败: {e}")
@@ -167,6 +182,9 @@ class Downloader:
                     f"[BIG BANANA] 图片下载失败，状态码: {response.status_code}"
                 )
                 return None
+            logger.debug(
+                f"[BIG BANANA] 图片下载成功: status={response.status_code}, content_type={response.headers.get('Content-Type', '')}, bytes={len(response.content)}"
+            )
             # 在线程池中处理图片，避免阻塞事件循环
             content = await asyncio.to_thread(Downloader._handle_image, response.content)
             return content

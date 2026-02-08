@@ -1,9 +1,13 @@
 import asyncio
+import base64
+import binascii
 import itertools
 import os
 import json
 import random
+import re
 import threading
+from io import BytesIO
 from datetime import datetime, date
 from typing import Dict, Any
 
@@ -15,6 +19,7 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import BaseMessageComponent
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.utils.session_waiter import SessionController, session_waiter
+from PIL import Image
 
 from .core import BaseProvider, Downloader, HttpManager
 from .core.data import (
@@ -25,7 +30,7 @@ from .core.data import (
     ProviderConfig,
 )
 from .core.llm_tools import BigBananaPromptTool, BigBananaTool, remove_tools
-from .core.utils import clear_cache, read_file, save_images
+from .core.utils import clear_cache, read_file, save_images, slice_images
 
 # 提示词参数列表
 PARAMS_LIST = [
@@ -47,6 +52,10 @@ provider_list = ["main_provider", "back_provider", "back_provider2"]
 MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 # 预计算 Base64 长度阈值 (向下取整)，base64编码约为原始数据的4/3倍
 MAX_SIZE_B64_LEN = int(MAX_SIZE_BYTES * 4 / 3)
+# 表情网格: 6列×4行 = 24个表情
+EMOJI_GRID_COLS = 6
+EMOJI_GRID_ROWS = 4
+EMOJI_GRID_TOTAL = EMOJI_GRID_COLS * EMOJI_GRID_ROWS
 
 
 class BananaSign(Star):
@@ -145,6 +154,32 @@ class BananaSign(Star):
 
         # 图片持久化
         self.save_images = self.conf.get("save_images", {}).get("local_save", False)
+
+        # 图片切片配置（用于规避平台尺寸/分辨率限制）
+        image_slice_cfg = self.conf.get("image_slice_config", {})
+        self.image_slice_enabled = image_slice_cfg.get("enabled", False)
+
+        def _safe_conf_int(value, default_value: int, min_value: int) -> int:
+            try:
+                return max(min_value, int(value))
+            except (TypeError, ValueError):
+                return default_value
+
+        self.image_slice_max_height = _safe_conf_int(
+            image_slice_cfg.get("max_height", 1536),
+            default_value=1536,
+            min_value=0,
+        )
+        self.image_slice_max_slices = _safe_conf_int(
+            image_slice_cfg.get("max_slices", 8),
+            default_value=8,
+            min_value=1,
+        )
+        self.image_slice_max_b64_len = _safe_conf_int(
+            image_slice_cfg.get("max_base64_len", 0),
+            default_value=0,
+            min_value=0,
+        )
 
         # 正在运行的任务映射
         self.running_tasks: dict[str, asyncio.Task] = {}
@@ -1012,10 +1047,49 @@ class BananaSign(Star):
                     remaining = "∞" if is_admin else self._get_user(str(event.get_sender_id()))["bananas"]
                 else:
                     remaining = None
-                msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
 
-                # 画图成功，积分已在之前预扣，无需再次处理
-                yield event.chain_result(msg_chain)
+                # === 表情化：发送一张原图 + 切图结果 ===
+                if cmd == "表情化" and results:
+                    try:
+                        # 取第一张图片
+                        _, first_b64 = results[0]
+                        # 只发送第一张原图
+                        msg_chain = self.build_message_chain(event, [results[0]], remaining_bananas=remaining, elapsed_time=elapsed_str)
+                        yield event.chain_result(msg_chain)
+
+                        # 切图并发送
+                        image_bytes = base64.b64decode(first_b64)
+                        tiles = await asyncio.to_thread(self._slice_grid_image, image_bytes)
+                        if tiles and len(tiles) == EMOJI_GRID_TOTAL:
+                            nodes = [
+                                Comp.Node(
+                                    name="✂️ 表情化切图",
+                                    content=[Comp.Plain(f"✅ 表情化切图完成，共 {EMOJI_GRID_TOTAL} 张表情")],
+                                )
+                            ]
+                            for idx, tile in enumerate(tiles, start=1):
+                                tile_b64 = base64.b64encode(tile).decode("utf-8")
+                                nodes.append(
+                                    Comp.Node(
+                                        name=f"表情 {idx:02d}",
+                                        content=[Comp.Image.fromBase64(tile_b64)],
+                                    )
+                                )
+                            try:
+                                yield event.chain_result([Comp.Nodes(nodes)])
+                            except Exception:
+                                # 合并转发失败，降级为逐条发送
+                                for tile in tiles:
+                                    tile_b64 = base64.b64encode(tile).decode("utf-8")
+                                    yield event.chain_result([Comp.Image.fromBase64(tile_b64)])
+                        else:
+                            logger.warning(f"[BananaSign] 表情化切图数量异常: {len(tiles) if tiles else 0}")
+                    except Exception as e:
+                        logger.warning(f"[BananaSign] 表情化自动切图失败: {e}")
+                else:
+                    # 非表情化命令，正常发送所有原图
+                    msg_chain = self.build_message_chain(event, results, remaining_bananas=remaining, elapsed_time=elapsed_str)
+                    yield event.chain_result(msg_chain)
             except asyncio.CancelledError:
                 logger.info(f"{task_id} 任务被取消")
                 return
@@ -1239,22 +1313,33 @@ class BananaSign(Star):
         return None, err
 
     def build_message_chain(
-        self, event: AstrMessageEvent, results: list[tuple[str, str]], remaining_bananas: int | str = None, elapsed_time: str = None
+        self,
+        event: AstrMessageEvent,
+        results: list[tuple[str, str]],
+        remaining_bananas: int | str = None,
+        elapsed_time: str = None,
+        prefix_text: str | None = None,
     ) -> list[BaseMessageComponent]:
         """构建消息链"""
+        final_results = self._maybe_slice_results(event, results)
+
         msg_chain: list[BaseMessageComponent] = [
             Comp.Reply(id=event.message_obj.message_id)
         ]
+
+        if prefix_text:
+            msg_chain.append(Comp.Plain(prefix_text))
+
         # 对Telegram平台特殊处理，超过10MB的图片需要作为文件发送
         if event.platform_meta.name == "telegram" and any(
-            (b64 and len(b64) > MAX_SIZE_B64_LEN) for _, b64 in results
+            (b64 and len(b64) > MAX_SIZE_B64_LEN) for _, b64 in final_results
         ):
-            save_results = save_images(results, self.temp_dir)
+            save_results = save_images(final_results, self.temp_dir)
             for name_, path_ in save_results:
                 msg_chain.append(Comp.File(name=name_, file=str(path_)))
         else:
             # 其他平台直接发送图片
-            msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in results)
+            msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in final_results)
 
         # 添加生成耗时和剩余香蕉数
         if elapsed_time is not None and remaining_bananas is not None:
@@ -1265,6 +1350,38 @@ class BananaSign(Star):
             msg_chain.append(Comp.Plain(f"\n🍌剩余香蕉: {remaining_bananas}"))
 
         return msg_chain
+
+    def _maybe_slice_results(
+        self,
+        event: AstrMessageEvent,
+        results: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        """根据配置和平台限制自动切片图片"""
+        if not results or not self.image_slice_enabled:
+            return results
+
+        slice_b64_limit = self.image_slice_max_b64_len if self.image_slice_max_b64_len > 0 else None
+        if event.platform_meta.name == "telegram":
+            if slice_b64_limit is None:
+                slice_b64_limit = MAX_SIZE_B64_LEN
+            else:
+                slice_b64_limit = min(slice_b64_limit, MAX_SIZE_B64_LEN)
+
+        try:
+            sliced_results = slice_images(
+                results,
+                max_height=self.image_slice_max_height,
+                max_b64_len=slice_b64_limit,
+                max_slices=self.image_slice_max_slices,
+            )
+            if len(sliced_results) > len(results):
+                logger.info(
+                    f"[BananaSign] 图片切片生效: {len(results)} -> {len(sliced_results)}"
+                )
+            return sliced_results
+        except Exception as e:
+            logger.warning(f"[BananaSign] 图片切片失败，回退原图: {e}")
+            return results
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
@@ -1280,6 +1397,62 @@ class BananaSign(Star):
         remove_tools(self.context)
 
     # ========== 签到指令 ==========
+
+    def _extract_first_image_url(self, event: AstrMessageEvent) -> str | None:
+        """从当前消息或引用消息中提取第一张图片 URL"""
+        for comp in event.get_messages():
+            if isinstance(comp, Comp.Reply) and comp.chain:
+                for quote in comp.chain:
+                    if isinstance(quote, Comp.Image) and quote.url:
+                        return quote.url
+                    if (
+                        isinstance(quote, Comp.File)
+                        and quote.url
+                        and quote.url.startswith("http")
+                        and quote.url.lower().endswith(SUPPORTED_FILE_FORMATS_WITH_DOT)
+                    ):
+                        return quote.url
+            elif isinstance(comp, Comp.Image) and comp.url:
+                return comp.url
+            elif (
+                isinstance(comp, Comp.File)
+                and comp.url
+                and comp.url.startswith("http")
+                and comp.url.lower().endswith(SUPPORTED_FILE_FORMATS_WITH_DOT)
+            ):
+                return comp.url
+        return None
+
+    def _slice_grid_image(self, image_bytes: bytes) -> list[bytes]:
+        """将图片按固定 4×6 网格切图，返回 24 个 PNG bytes"""
+        with Image.open(BytesIO(image_bytes)) as img:
+            src = img.convert("RGBA") if img.mode not in ("RGB", "RGBA") else img.copy()
+
+        width, height = src.size
+        cell_width = width // EMOJI_GRID_COLS
+        cell_height = height // EMOJI_GRID_ROWS
+        if cell_width <= 0 or cell_height <= 0:
+            src.close()
+            return []
+
+        slices: list[bytes] = []
+        for r in range(EMOJI_GRID_ROWS):
+            top = r * cell_height
+            bottom = (r + 1) * cell_height if r < EMOJI_GRID_ROWS - 1 else height
+            for c in range(EMOJI_GRID_COLS):
+                left = c * cell_width
+                right = (c + 1) * cell_width if c < EMOJI_GRID_COLS - 1 else width
+                if right <= left or bottom <= top:
+                    continue
+                tile = src.crop((left, top, right, bottom))
+                buf = BytesIO()
+                tile.save(buf, format="PNG")
+                slices.append(buf.getvalue())
+                buf.close()
+                tile.close()
+
+        src.close()
+        return slices
 
     @filter.command("签到")
     async def sign_in(self, event: AstrMessageEvent):
@@ -1782,16 +1955,12 @@ class BananaSign(Star):
             return
 
         # 发送最终结果
-        msg_chain: list[BaseMessageComponent] = [
-            Comp.Reply(id=event.message_obj.message_id),
-            Comp.Plain("✅ 线稿转绘完成！\n"),
-        ]
-        msg_chain.extend(Comp.Image.fromBase64(b64) for _, b64 in final_result)
-
-        # 添加耗时和剩余香蕉
-        status_parts = [f"⏰耗时: {elapsed_str}"]
-        if remaining is not None:
-            status_parts.append(f"🍌剩余香蕉: {remaining}")
-        msg_chain.append(Comp.Plain(f"\n{'   '.join(status_parts)}"))
-
-        yield event.chain_result(msg_chain)
+        yield event.chain_result(
+            self.build_message_chain(
+                event,
+                final_result,
+                remaining_bananas=remaining,
+                elapsed_time=elapsed_str,
+                prefix_text="✅ 线稿转绘完成！\n",
+            )
+        )

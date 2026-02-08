@@ -71,26 +71,6 @@ class BigBananaPromptTool(FunctionTool[AstrAgentContext]):
         get_preset_prompt = kwargs.get("get_preset_prompt", "")
         get_preset_name_list = kwargs.get("get_preset_name_list", False)
 
-        # 群白名单判断
-        if (
-            plugin.group_whitelist_enabled
-            and event.unified_msg_origin not in plugin.group_whitelist
-        ):
-            logger.info(
-                f"[BIG BANANA] 群 {event.unified_msg_origin} 不在白名单内，跳过处理"
-            )
-            return "当前群不在白名单内，无法使用图片生成功能。"
-
-        # 用户白名单判断
-        if (
-            plugin.user_whitelist_enabled
-            and event.get_sender_id() not in plugin.user_whitelist
-        ):
-            logger.info(
-                f"[BIG BANANA] 用户 {event.get_sender_id()} 不在白名单内，跳过处理"
-            )
-            return "该用户不在白名单内，无法使用图片生成功能。"
-
         # 返回预设名称列表
         if get_preset_name_list:
             preset_name_list = list(plugin.prompt_dict.keys())
@@ -184,26 +164,6 @@ class BigBananaTool(FunctionTool[AstrAgentContext]):
         prompt = kwargs.get("prompt", "anything")
         preset_name = kwargs.get("preset_name", None)
         referer_id = kwargs.get("referer_id", [])
-
-        # 群白名单判断
-        if (
-            plugin.group_whitelist_enabled
-            and event.unified_msg_origin not in plugin.group_whitelist
-        ):
-            logger.info(
-                f"[BIG BANANA] 群 {event.unified_msg_origin} 不在白名单内，跳过处理"
-            )
-            return "当前群不在白名单内，无法使用图片生成功能。"
-
-        # 用户白名单判断
-        if (
-            plugin.user_whitelist_enabled
-            and event.get_sender_id() not in plugin.user_whitelist
-        ):
-            logger.info(
-                f"[BIG BANANA] 用户 {event.get_sender_id()} 不在白名单内，跳过处理"
-            )
-            return "该用户不在白名单内，无法使用图片生成功能。"
 
         # 必须提供 prompt 或 preset_name 参数
         if not prompt and not preset_name:

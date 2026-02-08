@@ -110,18 +110,6 @@ class BananaSign(Star):
         self.params_alias = self.conf.get("params_alias_map", {})
         # 初始化提示词配置
         self.init_prompts()
-        # 白名单配置
-        self.whitelist_config = self.conf.get("whitelist_config", {})
-        # 群组白名单，列表是引用类型
-        self.group_whitelist_enabled = self.whitelist_config.get("enabled", False)
-        self.group_whitelist = self.whitelist_config.get("whitelist", [])
-        # 用户白名单
-        self.user_whitelist_enabled = self.whitelist_config.get("user_enabled", False)
-        self.user_whitelist = self.whitelist_config.get("user_whitelist", [])
-
-        # 白名单集合缓存（避免每条消息都做 list -> str 转换）
-        self.group_whitelist_set = {str(gid) for gid in self.group_whitelist}
-        self.user_whitelist_set = {str(uid) for uid in self.user_whitelist}
 
         # 前缀配置
         prefix_config = self.conf.get("prefix_config", {})
@@ -212,9 +200,20 @@ class BananaSign(Star):
         except Exception as e:
             logger.error(f"[BananaSign] 保存数据失败: {e}")
 
+    def _save_sign_data_with_snapshot(self, data_snapshot: dict):
+        """使用数据快照保存用户签到数据"""
+        try:
+            with self._sign_data_file_lock:
+                with open(self.sign_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(data_snapshot, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"[BananaSign] 保存数据失败: {e}")
+
     async def _save_sign_data_async(self):
         """异步保存用户签到数据（避免阻塞事件循环）"""
-        await asyncio.to_thread(self._save_sign_data)
+        import copy
+        data_snapshot = copy.deepcopy(self.user_data)
+        await asyncio.to_thread(self._save_sign_data_with_snapshot, data_snapshot)
 
     def _get_user(self, user_id: str) -> Dict[str, Any]:
         """获取用户数据，不存在则创建"""
@@ -451,97 +450,6 @@ class BananaSign(Star):
         if user_id not in self.user_locks:
             self.user_locks[user_id] = asyncio.Lock()
         return self.user_locks[user_id]
-
-    # === 管理指令：白名单管理 ===
-    @filter.command("lm白名单添加", alias={"lmawl"})
-    async def add_whitelist_command(
-        self, event: AstrMessageEvent, cmd_type: str = "", target_id: str = ""
-    ):
-        """lm白名单添加 <用户/群组> <ID>"""
-        if not self.is_global_admin(event):
-            logger.info(
-                f"用户 {event.get_sender_id()} 试图执行管理员命令 lm白名单添加，权限不足"
-            )
-            return
-
-        if not cmd_type or not target_id:
-            yield event.plain_result(
-                "❌ 格式错误。\n用法：lm白名单添加 (用户/群组) (ID)"
-            )
-            return
-
-        msg_type = ""
-        if cmd_type in ["用户", "user"] and target_id not in self.user_whitelist_set:
-            msg_type = "用户"
-            self.user_whitelist.append(target_id)
-            self.user_whitelist_set.add(str(target_id))
-        elif cmd_type in ["群组", "group"] and target_id not in self.group_whitelist_set:
-            msg_type = "群组"
-            self.group_whitelist.append(target_id)
-            self.group_whitelist_set.add(str(target_id))
-        elif cmd_type not in ["用户", "user", "群组", "group"]:
-            yield event.plain_result("❌ 类型错误，请使用「用户」或「群组」。")
-            return
-        else:
-            yield event.plain_result(f"⚠️ {target_id} 已在名单列表中。")
-            return
-
-        self.conf.save_config()
-        yield event.plain_result(f"✅ 已添加{msg_type}白名单：{target_id}")
-
-    @filter.command("lm白名单删除", alias={"lmdwl"})
-    async def del_whitelist_command(
-        self, event: AstrMessageEvent, cmd_type: str = "", target_id: str = ""
-    ):
-        """lm白名单删除 <用户/群组> <ID>"""
-        if not self.is_global_admin(event):
-            logger.info(
-                f"用户 {event.get_sender_id()} 试图执行管理员命令 lm白名单删除，权限不足"
-            )
-            return
-
-        if not cmd_type or not target_id:
-            yield event.plain_result(
-                "❌ 格式错误。\n用法：lm白名单删除 (用户/群组) (ID)"
-            )
-            return
-
-        if cmd_type in ["用户", "user"] and target_id in self.user_whitelist_set:
-            msg_type = "用户"
-            self.user_whitelist.remove(target_id)
-            self.user_whitelist_set.discard(str(target_id))
-        elif cmd_type in ["群组", "group"] and target_id in self.group_whitelist_set:
-            msg_type = "群组"
-            self.group_whitelist.remove(target_id)
-            self.group_whitelist_set.discard(str(target_id))
-        elif cmd_type not in ["用户", "user", "群组", "group"]:
-            yield event.plain_result("❌ 类型错误，请使用「用户」或「群组」。")
-            return
-        else:
-            yield event.plain_result(f"⚠️ {target_id} 不在名单列表中。")
-            return
-
-        self.conf.save_config()
-        yield event.plain_result(f"🗑️ 已删除{msg_type}白名单：{target_id}")
-
-    @filter.command("lm白名单列表", alias={"lmwll"})
-    async def list_whitelist_command(self, event: AstrMessageEvent):
-        """lm白名单列表"""
-        if not self.is_global_admin(event):
-            logger.info(
-                f"用户 {event.get_sender_id()} 试图执行管理员命令 lm白名单列表，权限不足"
-            )
-            return
-
-        msg = f"""📋 白名单配置状态：
-=========
-🏢 群组限制：{"✅ 开启" if self.group_whitelist_enabled else "⬜ 关闭"}
-列表：{self.group_whitelist}
-=========
-👤 用户限制：{"✅ 开启" if self.user_whitelist_enabled else "⬜ 关闭"}
-列表：{self.user_whitelist}"""
-
-        yield event.plain_result(msg)
 
     # === 管理指令：添加/更新提示词 ===
     @filter.command("lm添加", alias={"lma"})
@@ -880,22 +788,6 @@ class BananaSign(Star):
                 logger.info(f"[BananaSign] 用户 {user_id} 预扣 {self.cost_per_draw} 香蕉，今日次数 {user['daily_draws']}/{self.max_daily_draws}")
         else:
             user_id = None  # 管理员不需要用户ID
-
-        # 群白名单判断
-        if (
-            self.group_whitelist_enabled
-            and str(event.unified_msg_origin) not in self.group_whitelist_set
-        ):
-            logger.info(f"群 {event.unified_msg_origin} 不在白名单内，跳过处理")
-            return
-
-        # 用户白名单判断
-        if (
-            self.user_whitelist_enabled
-            and str(event.get_sender_id()) not in self.user_whitelist_set
-        ):
-            logger.info(f"用户 {event.get_sender_id()} 不在白名单内，跳过处理")
-            return
 
         # 获取提示词配置 (使用 .copy() 防止修改污染全局预设)
         params = self.prompt_dict.get(cmd, {}).copy()

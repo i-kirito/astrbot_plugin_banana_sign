@@ -191,7 +191,11 @@ class Downloader:
         except (SSLError, CertificateVerifyError):
             # 关闭SSL验证重试
             response = await self.session.get(
-                url, timeout=30, verify=False, headers=headers
+                url,
+                proxy=self.def_common_config.proxy,
+                timeout=30,
+                verify=False,
+                headers=headers,
             )
             if response.status_code != 200 or not response.content:
                 logger.warning(

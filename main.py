@@ -1707,6 +1707,7 @@ class BananaSign(Star):
             "prompt": lineart_prompt,
             "min_images": 1,
             "max_images": 1,
+            "image_size": self.prompt_config.image_size,
         }
 
         # 下载动作参考图
@@ -1755,6 +1756,7 @@ class BananaSign(Star):
             "prompt": final_prompt,
             "min_images": 1,
             "max_images": 1,
+            "image_size": self.prompt_config.image_size,
         }
 
         # 准备图片：线稿（图1）+ 角色参考（图2）

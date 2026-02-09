@@ -82,7 +82,8 @@ class GeminiProvider(BaseProvider):
                                 return None, 200, "图片触碰内容审查，无法生成"
                             return None, 200, f"生成失败: {finish_msg[:100]}"
                     return None, 200, "图片触碰内容审查，无法生成"
-                return b64_images, 200, None
+                # 只返回第一张图片，避免重复
+                return b64_images[:1], 200, None
             else:
                 logger.error(
                     f"[BIG BANANA] 图片生成失败，状态码: {response.status_code}, 响应内容: {response.text[:1024]}"
@@ -164,7 +165,8 @@ class GeminiProvider(BaseProvider):
                         f"[BIG BANANA] 请求成功，但未返回图片数据, 响应内容: {result[:1024]}"
                     )
                     return None, 200, "图片触碰内容审查，无法生成"
-                return b64_images, 200, None
+                # 只返回第一张图片，避免重复
+                return b64_images[:1], 200, None
             else:
                 logger.error(
                     f"[BIG BANANA] 图片生成失败，状态码: {response.status_code}, 响应内容: {result[:1024]}"

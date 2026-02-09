@@ -4,10 +4,9 @@ from typing import Literal
 # 常数
 DEF_OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEF_GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-DEF_VERTEX_AI_ANONYMOUS_BASE_API = "https://cloudconsole-pa.clients6.google.com"
 
 # 类型枚举
-_API_Type = Literal["Gemini", "OpenAI_Chat", "Vertex_AI_Anonymous"]
+_API_Type = Literal["Gemini", "OpenAI_Chat"]
 
 # 支持的文件格式
 SUPPORTED_FILE_FORMATS = (
@@ -100,17 +99,3 @@ class PreferenceConfig:
     """ 跳过第一次引用@ """
     skip_llm_at_first: bool = False
     """ 跳过第一次LLM@ """
-
-
-@dataclass(repr=False, slots=True)
-class VertexAIAnonymousConfig:
-    """Vertex AI Anonymous 配置参数"""
-
-    recaptcha_base_api: str = "https://www.google.com"
-    """Recaptcha 基础 API 地址"""
-    vertex_ai_anonymous_base_api: str = "https://cloudconsole-pa.clients6.google.com"
-    """Vertex AI Anonymous 基础 API 地址"""
-    system_prompt: str | None = None
-    """系统提示词"""
-    max_retry: int = 10
-    """最大重试次数"""

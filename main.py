@@ -705,6 +705,16 @@ class BananaSign(Star):
             return
 
         cmd = message_str.split(" ", 1)[0]
+
+        # 检查是否为内置命令（线稿转绘）
+        if cmd in ("线稿转绘", "xgzh", "lineart2draw"):
+            # 提取服装描述参数
+            parts = message_str.split(" ", 1)
+            clothing_desc = parts[1].strip() if len(parts) > 1 else ""
+            async for result in self.lineart_to_draw(event, clothing_desc):
+                yield result
+            return
+
         # 检查命令是否在提示词配置中
         if cmd not in self.prompt_dict:
             return

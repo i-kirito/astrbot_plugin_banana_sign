@@ -72,6 +72,16 @@ class Downloader:
         self.session = session
         self.def_common_config = common_config
 
+    def _get_proxy(self) -> str | None:
+        """获取格式化的代理 URL（自动补全 http:// 前缀）"""
+        proxy = self.def_common_config.proxy
+        if not proxy:
+            return None
+        proxy = proxy.strip()
+        if proxy and "://" not in proxy:
+            return f"http://{proxy}"
+        return proxy
+
     async def _fetch_image_with_retry(self, url: str) -> tuple[str, str] | None:
         """下载单张图片（带重试）"""
         for _ in range(3):
@@ -173,7 +183,7 @@ class Downloader:
         try:
             response = await self.session.get(
                 url,
-                proxy=self.def_common_config.proxy,
+                proxy=self._get_proxy(),
                 timeout=30,
                 headers=headers,
             )
@@ -192,7 +202,7 @@ class Downloader:
             # 关闭SSL验证重试
             response = await self.session.get(
                 url,
-                proxy=self.def_common_config.proxy,
+                proxy=self._get_proxy(),
                 timeout=30,
                 verify=False,
                 headers=headers,

@@ -224,10 +224,15 @@ class GeminiProvider(BaseProvider):
             ],
         }
 
+        # 统一组装 imageConfig，避免参数相互覆盖
+        image_config = {}
+
         # 处理图片宽高比参数
         aspect_ratio = params.get("aspect_ratio", self.def_prompt_config.aspect_ratio)
-        if aspect_ratio != "default":
-            context["generationConfig"]["imageConfig"] = {"aspectRatio": aspect_ratio}
+        if isinstance(aspect_ratio, str):
+            aspect_ratio = aspect_ratio.strip()
+        if aspect_ratio and aspect_ratio != "default":
+            image_config["aspectRatio"] = aspect_ratio
 
         # 以下参数仅 Gemini-3-Pro-Image-Preview 模型有效
         if "gemini-3" in model.lower():
@@ -235,7 +240,22 @@ class GeminiProvider(BaseProvider):
             if params.get("google_search", self.def_prompt_config.google_search):
                 context["tools"] = [{"google_search": {}}]
             # 处理图片分辨率参数
-            image_size = params.get("image_size", self.def_prompt_config.image_size)
-            context["generationConfig"]["imageConfig"] = {"imageSize": image_size}
+            image_size_raw = params.get("image_size", self.def_prompt_config.image_size)
+            image_size = (
+                str(image_size_raw).strip().upper()
+                if image_size_raw is not None
+                else "1K"
+            )
+            if image_size not in {"1K", "2K", "4K"}:
+                image_size = (
+                    str(self.def_prompt_config.image_size).strip().upper()
+                    if self.def_prompt_config.image_size
+                    else "1K"
+                )
+            image_config["imageSize"] = image_size
+            logger.info(f"[BIG BANANA] Gemini imageSize={image_size}, model={model}")
+
+        if image_config:
+            context["generationConfig"]["imageConfig"] = image_config
 
         return context
